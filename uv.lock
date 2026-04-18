@@ -1879,6 +1879,7 @@ all = [
     { name = "elevenlabs" },
     { name = "fastapi" },
     { name = "faster-whisper" },
+    { name = "hindsight-client" },
     { name = "honcho-ai" },
     { name = "lark-oapi" },
     { name = "markdown", marker = "sys_platform == 'linux'" },
@@ -1924,6 +1925,9 @@ feishu = [
 ]
 homeassistant = [
     { name = "aiohttp" },
+]
+hindsight = [
+    { name = "hindsight-client" },
 ]
 honcho = [
     { name = "honcho-ai" },
@@ -2029,6 +2033,7 @@ requires-dist = [
     { name = "hermes-agent", extras = ["dingtalk"], marker = "extra == 'all'" },
     { name = "hermes-agent", extras = ["feishu"], marker = "extra == 'all'" },
     { name = "hermes-agent", extras = ["homeassistant"], marker = "extra == 'all'" },
+    { name = "hermes-agent", extras = ["hindsight"], marker = "extra == 'all'" },
     { name = "hermes-agent", extras = ["honcho"], marker = "extra == 'all'" },
     { name = "hermes-agent", extras = ["honcho"], marker = "extra == 'termux'" },
     { name = "hermes-agent", extras = ["matrix"], marker = "sys_platform == 'linux' and extra == 'all'" },
@@ -2044,6 +2049,7 @@ requires-dist = [
     { name = "hermes-agent", extras = ["tts-premium"], marker = "extra == 'all'" },
     { name = "hermes-agent", extras = ["voice"], marker = "extra == 'all'" },
     { name = "hermes-agent", extras = ["web"], marker = "extra == 'all'" },
+    { name = "hindsight-client", marker = "extra == 'hindsight'", specifier = ">=0.4.22,<1" },
     { name = "honcho-ai", marker = "extra == 'honcho'", specifier = ">=2.0.1,<3" },
     { name = "httpx", extras = ["socks"], specifier = ">=0.28.1,<1" },
     { name = "jinja2", specifier = ">=3.1.5,<4" },
@@ -2083,7 +2089,7 @@ requires-dist = [
     { name = "wandb", marker = "extra == 'rl'", specifier = ">=0.15.0,<1" },
     { name = "yc-bench", marker = "python_full_version >= '3.12' and extra == 'yc-bench'", git = "https://github.com/collinear-ai/yc-bench.git" },
 ]
-provides-extras = ["modal", "daytona", "dev", "messaging", "cron", "slack", "matrix", "cli", "tts-premium", "voice", "pty", "honcho", "mcp", "homeassistant", "sms", "acp", "mistral", "termux", "dingtalk", "feishu", "web", "rl", "yc-bench", "all"]
+provides-extras = ["modal", "daytona", "dev", "messaging", "cron", "slack", "matrix", "cli", "tts-premium", "voice", "pty", "honcho", "hindsight", "mcp", "homeassistant", "sms", "acp", "mistral", "termux", "dingtalk", "feishu", "web", "rl", "yc-bench", "all"]
 
 [[package]]
 name = "hf-transfer"
@@ -2161,6 +2167,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/93/30/d30ba159404050d53b4b1b1c4477f9591f43af18758be1fb7dab6afbfe7d/honcho_ai-2.0.1.tar.gz", hash = "sha256:6fdeebf9454e62bc523d57888e50359e67baafdb21f68621f9c14e08dc00623a", size = 46732, upload-time = "2026-02-09T21:03:26.99Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e2/de/83fda0c057cfa11d6b5ed532623184591aa7dcff4a067934ba6811026229/honcho_ai-2.0.1-py3-none-any.whl", hash = "sha256:94887e61d59f353e1e1e20b395858040780f5d67ca1e9d450538646544e4e42f", size = 56780, upload-time = "2026-02-09T21:03:25.992Z" },
+]
+
+[[package]]
+name = "hindsight-client"
+version = "0.5.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "aiohttp-retry" },
+    { name = "pydantic" },
+    { name = "python-dateutil" },
+    { name = "typing-extensions" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/79/54/b4db2fef377aff2562a03758c1fcfa8a34c33bc7853bd3c8ef59391e5ef4/hindsight_client-0.5.3.tar.gz", hash = "sha256:c43fdb2bf39342bd06b62a0a17266d8a9a4a7d5dd125c9e7bc7c000bd0ab200d", size = 97806, upload-time = "2026-04-17T13:33:22.807636Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9f/2d/1887c0e548d50962a9bb14711455c69bda8fec718e1ade6d914833f8ecfe/hindsight_client-0.5.3-py3-none-any.whl", hash = "sha256:27b2e0e573fa6abbbaff3ea8ba08e3a1dd8169a252d4001e9833029bb29a2bf9", size = 244980, upload-time = "2026-04-17T13:33:21.477036Z" },
 ]
 
 [[package]]

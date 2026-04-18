@@ -58,6 +58,7 @@ def _prompt(label: str, default: str | None = None, secret: bool = False) -> str
 def _install_dependencies(provider_name: str) -> None:
     """Install pip dependencies declared in plugin.yaml."""
     import subprocess
+    import sys
     from plugins.memory import find_provider_dir
 
     plugin_dir = find_provider_dir(provider_name)
@@ -96,6 +97,22 @@ def _install_dependencies(provider_name: str) -> None:
             missing.append(dep)
 
     if not missing:
+        return
+
+    # On Nix, the Python store path is read-only — skip uv pip install and
+    # tell the user to update the flake instead.
+    _nix_env = os.environ.get("HERMES_NIX_ENV") or sys.executable.startswith("/nix/store/")
+    if _nix_env:
+        print(f"\n  ⚠ Running in a Nix-managed Python environment.")
+        print(f"    The following package(s) could not be found: {', '.join(missing)}")
+        print(f"    On NixOS, dependencies are declared in the flake — uv pip install")
+        print(f"    cannot write to the read-only Nix store.")
+        if "hindsight-client" in missing:
+            print(f"    → hindsight-client is bundled since hermes-agent v0.10.0;")
+            print(f"      rebuild with: nix build github:NousResearch/hermes-agent")
+        if "hindsight-all" in missing:
+            print(f"    → hindsight-all (local embedded) is not packaged for NixOS.")
+            print(f"      Use cloud or local_external mode instead.")
         return
 
     print(f"\n  Installing dependencies: {', '.join(missing)}")

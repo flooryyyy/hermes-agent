@@ -270,6 +270,8 @@ class HindsightMemoryProvider(MemoryProvider):
 
         from hermes_cli.memory_setup import _curses_select
 
+        _nix_env = os.environ.get("HERMES_NIX_ENV") or sys.executable.startswith("/nix/store/")
+
         print("\n  Configuring Hindsight memory:\n")
 
         # Step 1: Mode selection
@@ -296,20 +298,33 @@ class HindsightMemoryProvider(MemoryProvider):
             deps_to_install = [cloud_dep]
 
         print(f"\n  Checking dependencies...")
-        uv_path = shutil.which("uv")
-        if not uv_path:
-            print("  ⚠ uv not found — install it: curl -LsSf https://astral.sh/uv/install.sh | sh")
-            print(f"  Then run manually: uv pip install --python {sys.executable} {' '.join(deps_to_install)}")
+        if _nix_env:
+            # Nix-managed Python environment: the store path is read-only.
+            # hindsight-client is bundled via the flake; hindsight-all (local
+            # embedded) is not available on NixOS — inform the user and skip.
+            if mode == "local_embedded":
+                print("  ⚠ Local embedded mode requires 'hindsight-all' which is not")
+                print("    included in the Nix flake (binary dependencies make it")
+                print("    impractical to package declaratively).")
+                print("    → Use cloud or local_external mode instead on NixOS.")
+                print("    → Or run a Hindsight server and connect via local_external.")
+            else:
+                print("  ✓ hindsight-client is bundled in the Nix environment")
         else:
-            try:
-                subprocess.run(
-                    [uv_path, "pip", "install", "--python", sys.executable, "--quiet", "--upgrade"] + deps_to_install,
-                    check=True, timeout=120, capture_output=True,
-                )
-                print(f"  ✓ Dependencies up to date")
-            except Exception as e:
-                print(f"  ⚠ Install failed: {e}")
-                print(f"  Run manually: uv pip install --python {sys.executable} {' '.join(deps_to_install)}")
+            uv_path = shutil.which("uv")
+            if not uv_path:
+                print("  ⚠ uv not found — install it: curl -LsSf https://astral.sh/uv/install.sh | sh")
+                print(f"  Then run manually: uv pip install --python {sys.executable} {' '.join(deps_to_install)}")
+            else:
+                try:
+                    subprocess.run(
+                        [uv_path, "pip", "install", "--python", sys.executable, "--quiet", "--upgrade"] + deps_to_install,
+                        check=True, timeout=120, capture_output=True,
+                    )
+                    print(f"  ✓ Dependencies up to date")
+                except Exception as e:
+                    print(f"  ⚠ Install failed: {e}")
+                    print(f"  Run manually: uv pip install --python {sys.executable} {' '.join(deps_to_install)}")
 
         # Step 3: Mode-specific config
         if mode == "cloud":
@@ -469,20 +484,23 @@ class HindsightMemoryProvider(MemoryProvider):
     def initialize(self, session_id: str, **kwargs) -> None:
         self._session_id = session_id
 
-        # Check client version and auto-upgrade if needed
+        # Check client version and auto-upgrade if needed.
+        # Skip on Nix: the store path is read-only; version is managed by the flake.
         try:
             from importlib.metadata import version as pkg_version
             from packaging.version import Version
+            import sys as _sys
+            _nix_env = os.environ.get("HERMES_NIX_ENV") or _sys.executable.startswith("/nix/store/")
             installed = pkg_version("hindsight-client")
-            if Version(installed) < Version(_MIN_CLIENT_VERSION):
+            if not _nix_env and Version(installed) < Version(_MIN_CLIENT_VERSION):
                 logger.warning("hindsight-client %s is outdated (need >=%s), attempting upgrade...",
                                installed, _MIN_CLIENT_VERSION)
-                import shutil, subprocess, sys
+                import shutil, subprocess
                 uv_path = shutil.which("uv")
                 if uv_path:
                     try:
                         subprocess.run(
-                            [uv_path, "pip", "install", "--python", sys.executable,
+                            [uv_path, "pip", "install", "--python", _sys.executable,
                              "--quiet", "--upgrade", f"hindsight-client>={_MIN_CLIENT_VERSION}"],
                             check=True, timeout=120, capture_output=True,
                         )
