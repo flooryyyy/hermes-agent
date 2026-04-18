@@ -105,6 +105,7 @@ all = [
   "hermes-agent[honcho]",
   "hermes-agent[hindsight]",
   "hermes-agent[mcp]",
+  "hermes-agent[homeassistant]",
   "hermes-agent[sms]",
   "hermes-agent[acp]",
   "hermes-agent[voice]",
