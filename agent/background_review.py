@@ -463,19 +463,24 @@ def _run_review_in_thread(
                     quiet_mode=True,
                 )
             }
+            # Read-only investigation tools for background review context
+            review_whitelist.update({
+                "read_file", "search_files", "session_search", "process",
+                "lcm_grep", "lcm_status", "lcm_doctor",
+            })
             set_thread_tool_whitelist(
                 review_whitelist,
                 deny_msg_fmt=(
                     "Background review denied non-whitelisted tool: "
-                    "{tool_name}. Only memory/skill tools are allowed."
+                    "{tool_name}. Only memory/skill/read-only tools are allowed."
                 ),
             )
             try:
                 review_agent.run_conversation(
                     user_message=(
                         prompt
-                        + "\n\nYou can only call memory and skill "
-                        "management tools. Other tools will be denied "
+                        + "\n\nYou can only call memory, skill, "
+                        "and read-only investigation tools. Other tools will be denied "
                         "at runtime — do not attempt them."
                     ),
                     conversation_history=messages_snapshot,
