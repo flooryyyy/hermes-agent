@@ -1690,6 +1690,27 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
     if "run_id" not in ev_cols:
         _add_column_if_missing(conn, "task_events", "run_id", "run_id INTEGER")
 
+    # task_runs columns added post-v1: claim_lock, claim_expires, worker_pid,
+    # max_runtime_seconds, last_heartbeat_at. These were originally on tasks
+    # and moved to task_runs when runs became first-class. Legacy boards
+    # created before this migration will have a task_runs table without them.
+    runs_cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(task_runs)")
+    } if conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='task_runs'"
+    ).fetchone() else set()
+    if runs_cols:
+        for col_name, col_ddl in [
+            ("claim_lock", "claim_lock TEXT"),
+            ("claim_expires", "claim_expires INTEGER"),
+            ("worker_pid", "worker_pid INTEGER"),
+            ("max_runtime_seconds", "max_runtime_seconds INTEGER"),
+            ("last_heartbeat_at", "last_heartbeat_at INTEGER"),
+        ]:
+            if col_name not in runs_cols:
+                _add_column_if_missing(conn, "task_runs", col_name, col_ddl)
+
     # Same ordering rule as the additive ``tasks`` indexes above: create the
     # index after the additive column migration so legacy ``task_events``
     # tables don't fail during SCHEMA_SQL execution before ``run_id`` exists.
