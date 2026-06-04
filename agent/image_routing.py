@@ -280,8 +280,48 @@ def _lookup_supports_vision(
         logger.debug("image_routing: caps lookup failed for %s:%s — %s", provider, model, exc)
         return None
     if caps is None:
+        # The main provider has no models.dev data (e.g. a custom proxy).
+        # Fall back: strip the org prefix from the model ID and try every
+        # known provider family. The first one with a match wins.
+        caps = _resolve_caps_via_family_fallback(model)
+    if caps is None:
         return None
     return bool(caps.supports_vision)
+
+
+# ---------------------------------------------------------------------------
+# Provider-family fallback for capability resolution
+# ---------------------------------------------------------------------------
+
+_provider_families: tuple[str, ...] | None = None
+
+
+def _resolve_caps_via_family_fallback(model: str):
+    """When the main provider has no models.dev data, try every known
+    provider family with the model's short name (after the org prefix).
+
+    This auto-discovers the right family without a hardcoded mapping:
+    ``MiniMaxAI/MiniMax-M3`` → try minimax → found, returns caps.
+    ``unknown-org/some-model`` → no family has it → None (safe fallback).
+    """
+    if "/" not in model:
+        return None
+    _, short = model.split("/", 1)
+
+    global _provider_families
+    if _provider_families is None:
+        from agent.models_dev import PROVIDER_TO_MODELS_DEV
+        _provider_families = tuple(dict.fromkeys(PROVIDER_TO_MODELS_DEV.values()))
+
+    try:
+        from agent.models_dev import get_model_capabilities
+        for family in _provider_families:
+            caps = get_model_capabilities(family, short)
+            if caps is not None:
+                return caps
+    except Exception:
+        pass
+    return None
 
 
 def decide_image_input_mode(
@@ -307,10 +347,10 @@ def decide_image_input_mode(
     if mode_cfg == "text":
         return "text"
 
-    # auto
-    if _explicit_aux_vision_override(cfg):
-        return "text"
-
+    # auto: prefer native when the model reports vision capability.
+    # An explicit auxiliary.vision config is a fallback for models that
+    # cannot handle images natively — it should not block the native path
+    # for models that can.
     supports = _lookup_supports_vision(provider, model, cfg)
     if supports is True:
         return "native"
