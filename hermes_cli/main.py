@@ -6909,12 +6909,66 @@ def _run_with_idle_timeout(
     return subprocess.CompletedProcess(cmd, rc, stdout=combined, stderr="")
 
 
+def _nixos_build_env() -> dict[str, str] | None:
+    """Return extra env vars for native module builds on NixOS.
+
+    NixOS does not expose ``python3`` on the default ``PATH``, which
+    breaks ``node-gyp`` (called by ``node-pty`` during ``npm ci``).
+    This helper resolves the absolute path to ``python3`` so it can be
+    injected as the ``PYTHON`` environment variable, which ``node-gyp``
+    respects.
+
+    Two-tier resolution:
+    1. Fast path — the hermes venv's python3 (present in managed installs)
+    2. Fallback — resolves the absolute python3 path via ``nix-shell``
+
+    Returns a dict merged with ``os.environ`` (so ``PATH``, ``HOME``, etc.
+    are preserved) or ``None`` on non-NixOS systems / when python3 is
+    already on ``PATH``.
+    """
+    import re
+
+    # Only relevant on NixOS
+    try:
+        os_release = Path("/etc/os-release").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not re.search(r"^ID=nixos$", os_release, re.M):
+        return None
+
+    # python3 already on PATH — nothing to do
+    if shutil.which("python3"):
+        return None
+
+    # Tier 1: fast path — hermes venv python3
+    for venv_name in ("venv", ".venv"):
+        venv_python = PROJECT_ROOT / venv_name / "bin" / "python3"
+        if venv_python.exists():
+            return {**os.environ, "PYTHON": str(venv_python)}
+
+    # Tier 2: nix-shell fallback
+    try:
+        result = subprocess.run(
+            ["nix-shell", "-p", "python3", "--run", "which python3"],
+            capture_output=True, text=True, check=False, timeout=15,
+        )
+        if result.returncode == 0:
+            python3_path = result.stdout.strip()
+            if python3_path and Path(python3_path).exists():
+                return {**os.environ, "PYTHON": python3_path}
+    except Exception:
+        pass
+
+    return None
+
+
 def _run_npm_install_deterministic(
     npm: str,
     cwd: Path,
     *,
     extra_args: tuple[str, ...] = (),
     capture_output: bool = True,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
     """Run a deterministic npm install that does not mutate ``package-lock.json``.
 
@@ -6936,6 +6990,7 @@ def _run_npm_install_deterministic(
             encoding="utf-8",
             errors="replace",
             check=False,
+            env=env,
         )
         if ci_result.returncode == 0:
             return ci_result
@@ -6950,6 +7005,7 @@ def _run_npm_install_deterministic(
         encoding="utf-8",
         errors="replace",
         check=False,
+        env=env,
     )
 
 
@@ -7379,7 +7435,8 @@ def cmd_gui(args: argparse.Namespace):
             print(f"✓ Desktop {build_label} is up to date (content stamp matches)")
         else:
             print("→ Installing desktop workspace dependencies...")
-            install_result = _run_npm_install_deterministic(npm, PROJECT_ROOT, capture_output=False)
+            nixos_env = _nixos_build_env()
+            install_result = _run_npm_install_deterministic(npm, PROJECT_ROOT, capture_output=False, env=nixos_env)
             if install_result.returncode != 0:
                 print("✗ Desktop dependency install failed")
                 print(f"  Run manually:  cd {PROJECT_ROOT} && npm ci")
@@ -9151,6 +9208,7 @@ def _update_node_dependencies() -> None:
     # (see _desktop_build_needed).
     print("→ Updating Node.js dependencies...")
     extra_args = ["--no-fund", "--no-audit", "--progress=false"]
+    nixos_env = _nixos_build_env()
 
     # Step 1: root install (no workspace recursion).
     root_args = [*extra_args, "--workspaces=false"]
@@ -9159,6 +9217,7 @@ def _update_node_dependencies() -> None:
         PROJECT_ROOT,
         extra_args=tuple(root_args),
         capture_output=False,
+        env=nixos_env,
     )
     if root_result.returncode != 0:
         print("  ⚠ npm install failed in repo root")
@@ -9175,6 +9234,7 @@ def _update_node_dependencies() -> None:
         PROJECT_ROOT,
         extra_args=tuple(ws_args),
         capture_output=False,
+        env=nixos_env,
     )
     if ws_result.returncode == 0:
         print("  ✓ repo root + ui-tui, web workspaces (desktop skipped)")
