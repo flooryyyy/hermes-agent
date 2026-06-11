@@ -311,6 +311,8 @@ class TestBuiltinDiscovery:
             "tools.browser_tool",
             "tools.clarify_tool",
             "tools.code_execution_tool",
+            "tools.codegraph_tools",
+            "tools.computer_use_tool",
             "tools.cronjob_tools",
             "tools.delegate_tool",
             "tools.discord_tool",
@@ -323,7 +325,7 @@ class TestBuiltinDiscovery:
             "tools.memory_tool",
             "tools.mixture_of_agents_tool",
             "tools.process_registry",
-            "tools.rl_training_tool",
+            "tools.read_terminal_tool",
             "tools.send_message_tool",
             "tools.session_search_tool",
             "tools.skill_manager_tool",
@@ -331,8 +333,10 @@ class TestBuiltinDiscovery:
             "tools.terminal_tool",
             "tools.todo_tool",
             "tools.tts_tool",
+            "tools.video_generation_tool",
             "tools.vision_tools",
             "tools.web_tools",
+            "tools.x_search_tool",
             "tools.yuanbao_tools",
         }
 
