@@ -818,6 +818,11 @@ def _handle_create(args: dict, **kw) -> str:
                 session_id=session_id,
             )
             new_task = kb.get_task(conn, new_tid)
+
+            # Auto-subscribe the originating session so the agent that
+            # dispatched this task gets notified when it completes / blocks.
+            _maybe_auto_subscribe(conn, new_tid)
+
             return _ok(
                 task_id=new_tid,
                 status=new_task.status if new_task else None,
@@ -829,6 +834,63 @@ def _handle_create(args: dict, **kw) -> str:
     except Exception as e:
         logger.exception("kanban_create failed")
         return tool_error(f"kanban_create: {e}")
+
+
+def _maybe_auto_subscribe(conn: Any, task_id: str) -> None:
+    """Auto-subscribe the calling session to task completion / block events.
+
+    Subscription paths:
+    - Gateway (telegram/discord): uses HERMES_SESSION_PLATFORM + CHAT_ID from
+      contextvars, set by the messaging gateway before agent dispatch.
+    - TUI (herm): platform/chat_id contextvars are empty but
+      HERMES_GATEWAY_SESSION + HERMES_SESSION_KEY are in os.environ or
+      ContextVars — subscribe as platform="tui" + chat_id=<session_key>.
+      The TUI notification poller in tui_gateway/server.py checks
+      kanban_notify_subs for these rows.
+    - CLI / cron / test: no subscription — no persistent delivery channel.
+
+    Failure is silent — best-effort.
+    """
+    try:
+        from gateway.session_context import get_session_env
+        platform = get_session_env("HERMES_SESSION_PLATFORM", "")
+        chat_id = get_session_env("HERMES_SESSION_CHAT_ID", "")
+        if not platform or not chat_id:
+            # TUI sessions: context vars for platform/chat_id get cleared, but
+            # HERMES_GATEWAY_SESSION + HERMES_SESSION_KEY survive in os.environ.
+            # Also check HERMES_SESSION_ID — the agent subprocess may only have
+            # this one (e.g. command-code provider spawns without gateway env).
+            gw_session = os.environ.get("HERMES_GATEWAY_SESSION")
+            session_id = get_session_env("HERMES_SESSION_ID", "")
+            session_key = get_session_env("HERMES_SESSION_KEY", "")
+            if gw_session or session_id:
+                if not session_key:
+                    # HERMES_SESSION_KEY not set but we have HERMES_SESSION_ID —
+                    # use session_id as the chat_id fallback.
+                    if not session_id:
+                        return
+                    session_key = session_id
+                platform = "tui"
+                chat_id = session_key
+            else:
+                return
+        thread_id = get_session_env("HERMES_SESSION_THREAD_ID", "") or None
+        user_id = get_session_env("HERMES_SESSION_USER_ID", "") or None
+        notifier_profile = os.environ.get("HERMES_PROFILE")
+
+        # Lazy-import to keep the module-level dependency light
+        from hermes_cli import kanban_db as _kb
+        _kb.add_notify_sub(
+            conn, task_id=task_id,
+            platform=platform, chat_id=chat_id,
+            thread_id=thread_id, user_id=user_id,
+            notifier_profile=notifier_profile,
+        )
+    except Exception as _exc:
+        # Best-effort — don't fail the parent kanban_create call
+        import logging as _lg
+        _lg.getLogger(__name__).warning("_maybe_auto_subscribe failed: %r gw=%r key=%r",
+            _exc, os.environ.get("HERMES_GATEWAY_SESSION"), os.environ.get("HERMES_SESSION_KEY"))
 
 
 def _handle_unblock(args: dict, **kw) -> str:
