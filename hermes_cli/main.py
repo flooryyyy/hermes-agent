@@ -6300,12 +6300,48 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
 
     # If origin/main has commits not on upstream, don't trample
     if origin_ahead > 0:
+        if upstream_ahead == 0:
+            print()
+            print("  ✓ Fork is up to date with upstream")
+            return
+        # Both sides have new commits — attempt merge
         print()
-        print(f"ℹ Your fork has {origin_ahead} commit(s) not on upstream.")
-        print("  Skipping upstream sync to preserve your changes.")
-        print("  If you want to merge upstream changes, run:")
-        print("    git pull upstream main")
-        return
+        print(f"→ Fork has {origin_ahead} local commit(s) + upstream is {upstream_ahead} ahead")
+        print("→ Attempting merge from upstream...")
+        try:
+            subprocess.run(
+                git_cmd + ["merge", "upstream/main", "--no-edit"],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            print("  ✓ Merged upstream changes cleanly")
+            return
+        except subprocess.CalledProcessError as e:
+            print()
+            print("╔══════════════════════════════════════════════════════════╗")
+            print("║  ⚠ MERGE CONFLICT — upstream changes conflict with     ║")
+            print("║    your local commits. resolve manually:                ║")
+            print("║                                                        ║")
+            print("║    cd ~/.hermes/hermes-agent                           ║")
+            print("║    git status                                          ║")
+            print("║    # fix conflicts, then:                              ║")
+            print("║    git add . && git commit                             ║")
+            print("║    git push origin main                                ║")
+            print("║                                                        ║")
+            print("║    OR to abort: git merge --abort                      ║")
+            print("╚══════════════════════════════════════════════════════════╝")
+            if e.stderr:
+                conflict_files = []
+                for line in e.stderr.splitlines():
+                    if "CONFLICT" in line or "Merge conflict" in line:
+                        conflict_files.append(line.strip())
+                if conflict_files:
+                    print("  Conflict details:")
+                    for cf in conflict_files[:10]:
+                        print(f"    {cf}")
+            return
 
     # If upstream is not ahead, fork is up to date
     if upstream_ahead == 0:
