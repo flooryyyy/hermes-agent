@@ -71,6 +71,12 @@ _HERMES_CORE_TOOLS = [
     "kanban_complete", "kanban_block", "kanban_heartbeat",
     "kanban_comment", "kanban_create", "kanban_link",
     "kanban_unblock",
+    # CodeGraph code intelligence — symbol search, call graph, impact analysis.
+    # Gated via check_fn: only appears when `codegraph` binary is on PATH.
+    # Handlers return helpful errors if no .codegraph/ index exists.
+    "codegraph_search", "codegraph_context", "codegraph_callers",
+    "codegraph_callees", "codegraph_impact", "codegraph_affected",
+    "codegraph_index", "codegraph_status",
     # Computer use (macOS, gated on cua-driver being installed via check_fn)
     "computer_use",
 ]
@@ -152,6 +158,22 @@ TOOLSETS = {
         "includes": []
     },
 
+    "codegraph": {
+        "description": (
+            "CodeGraph code intelligence — tree-sitter-powered symbol search, "
+            "call graph traversal, impact analysis, and context generation. "
+            "Auto-gated: only available when the `codegraph` CLI is installed. "
+            "Tools return helpful errors if no .codegraph/ index exists in the "
+            "current workspace. Use codegraph_search over grep for finding "
+            "definitions, codegraph_context for understanding unfamiliar code."
+        ),
+        "tools": [
+            "codegraph_search", "codegraph_context", "codegraph_callers",
+            "codegraph_callees", "codegraph_impact", "codegraph_affected",
+            "codegraph_index", "codegraph_status",
+        ],
+        "includes": [],
+    },
     "terminal": {
         "description": "Terminal/command execution and process management tools",
         "tools": ["terminal", "process"],
