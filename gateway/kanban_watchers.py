@@ -330,6 +330,17 @@ class GatewayKanbanWatchersMixin:
                                         "kanban notifier: artifact delivery for %s failed: %s",
                                         sub["task_id"], art_exc,
                                     )
+                                try:
+                                    await self._wake_parent_for_kanban_task(
+                                        task=task,
+                                        event_payload=getattr(ev, "payload", None),
+                                        board_slug=board_slug,
+                                    )
+                                except Exception as wake_exc:
+                                    logger.warning(
+                                        "kanban notifier: parent wake for %s failed: %s",
+                                        sub["task_id"], wake_exc,
+                                    )
                             # Reset the failure counter on success.
                             sub_fail_counts.pop(sub_key, None)
                         except Exception as exc:
@@ -555,6 +566,66 @@ class GatewayKanbanWatchersMixin:
                     "kanban notifier: artifact upload (%s) failed: %s",
                     path, exc,
                 )
+
+    async def _wake_parent_for_kanban_task(
+        self, task, event_payload: Optional[dict], board_slug: Optional[str] = None,
+    ) -> None:
+        """Wake parent session when a kanban task completes.
+
+        Looks up task.session_id → gateway session_key → injects synthetic
+        message so the parent agent continues the pipeline.
+        """
+        if not task or not task.session_id:
+            return
+        if not hasattr(self, "session_store") or self.session_store is None:
+            return
+        session_key = self.session_store.find_session_key_by_id(task.session_id)
+        if not session_key:
+            logger.debug(
+                "kanban parent wake: no active gateway session for session_id %s (task %s)",
+                task.session_id, task.id,
+            )
+            return
+        self.session_store._ensure_loaded()
+        entry = self.session_store._entries.get(session_key)
+        if not entry or not entry.origin:
+            logger.debug("kanban parent wake: session_key %s has no origin", session_key)
+            return
+
+        summary = ""
+        if event_payload and event_payload.get("summary"):
+            summary = str(event_payload["summary"])[:500]
+        elif task.result:
+            summary = str(task.result)[:500]
+
+        synth_text = (
+            f"[KANBAN TASK COMPLETED — auto-wake for parent session]\n"
+            f"Task: {task.id}\nTitle: {task.title}\n"
+            f"Assignee: {task.assignee or 'unknown'}\nStatus: done\n"
+        )
+        if summary:
+            synth_text += f"Summary: {summary}\n"
+        synth_text += (
+            "\nChild task completed. Downstream dependencies should now be ready. "
+            "Continue the pipeline if applicable."
+        )
+
+        from gateway.platforms.base import MessageEvent, MessageType
+        synth_event = MessageEvent(
+            text=synth_text, message_type=MessageType.TEXT,
+            source=entry.origin, internal=True,
+        )
+        logger.info(
+            "kanban parent wake: injecting for task %s → session_key %s (session_id %s)",
+            task.id, session_key, task.session_id,
+        )
+        try:
+            await self._handle_message(synth_event)
+        except Exception as exc:
+            logger.warning(
+                "kanban parent wake: _handle_message failed for task %s → %s: %s",
+                task.id, session_key, exc, exc_info=True,
+            )
 
     async def _kanban_dispatcher_watcher(self) -> None:
         """Embedded kanban dispatcher — one tick every `dispatch_interval_seconds`.
