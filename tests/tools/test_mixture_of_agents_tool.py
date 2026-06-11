@@ -1,7 +1,7 @@
 import importlib
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -10,8 +10,7 @@ moa = importlib.import_module("tools.mixture_of_agents_tool")
 
 def test_moa_defaults_are_well_formed():
     # Invariants, not a catalog snapshot: the exact model list churns with
-    # OpenRouter availability (see PR #6636 where gemini-3-pro-preview was
-    # removed upstream). What we care about is that the defaults are present
+    # provider availability. What we care about is that the defaults are present
     # and valid vendor/model slugs.
     assert isinstance(moa.REFERENCE_MODELS, list)
     assert len(moa.REFERENCE_MODELS) >= 1
@@ -33,15 +32,15 @@ async def test_reference_model_retry_warnings_avoid_exc_info_until_terminal_fail
     warn = MagicMock()
     err = MagicMock()
 
-    monkeypatch.setattr(moa, "_get_openrouter_client", lambda: fake_client)
+    monkeypatch.setattr(moa, "_get_command_code_client", lambda: fake_client)
     monkeypatch.setattr(moa.logger, "warning", warn)
     monkeypatch.setattr(moa.logger, "error", err)
 
     model, message, success = await moa._run_reference_model_safe(
-        "openai/gpt-5.4-pro", "hello", max_retries=2
+        "xiaomi/mimo-v2.5-pro", "hello", max_retries=2
     )
 
-    assert model == "openai/gpt-5.4-pro"
+    assert model == "xiaomi/mimo-v2.5-pro"
     assert success is False
     assert "failed after 2 attempts" in message
     assert warn.call_count == 2
@@ -52,11 +51,22 @@ async def test_reference_model_retry_warnings_avoid_exc_info_until_terminal_fail
 
 @pytest.mark.asyncio
 async def test_moa_top_level_error_logs_single_traceback_on_aggregator_failure(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(
+                create=AsyncMock(return_value=SimpleNamespace(
+                    choices=[SimpleNamespace(
+                        message=SimpleNamespace(content="ok response")
+                    )]
+                ))
+            )
+        )
+    )
+    monkeypatch.setattr(moa, "_get_command_code_client", lambda: fake_client)
     monkeypatch.setattr(
         moa,
         "_run_reference_model_safe",
-        AsyncMock(return_value=("anthropic/claude-opus-4.6", "ok", True)),
+        AsyncMock(return_value=("xiaomi/mimo-v2.5-pro", "ok", True)),
     )
     monkeypatch.setattr(
         moa,
@@ -75,7 +85,7 @@ async def test_moa_top_level_error_logs_single_traceback_on_aggregator_failure(m
     result = json.loads(
         await moa.mixture_of_agents_tool(
             "solve this",
-            reference_models=["anthropic/claude-opus-4.6"],
+            reference_models=["xiaomi/mimo-v2.5-pro"],
         )
     )
 
