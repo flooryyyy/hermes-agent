@@ -864,6 +864,18 @@ class SessionStore:
         
         return None
     
+    def find_session_key_by_id(self, session_id: str) -> Optional[str]:
+        """Reverse lookup: find session_key for a given hermes session_id.
+
+        Used by kanban notifier to wake parent sessions when child tasks complete.
+        """
+        with self._lock:
+            self._ensure_loaded_locked()
+            for key, entry in self._entries.items():
+                if entry.session_id == session_id:
+                    return key
+        return None
+
     def has_any_sessions(self) -> bool:
         """Check if any sessions have ever been created (across all platforms).
 
