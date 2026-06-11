@@ -7414,6 +7414,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             self._manual_compress(cmd_original)
         elif canonical == "usage":
             self._show_usage()
+        elif canonical == "credits":
+            self._show_credits()
         elif canonical == "insights":
             self._show_insights(cmd_original)
         elif canonical == "copy":
@@ -8314,6 +8316,61 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         for line in lines:
             print(f"  {line}")
         return True
+
+    def _show_credits(self):
+        """Show provider credit balances (OpenCode Go, etc).
+
+        Runs ~/.hermes/scripts/usage.py --json and renders a compact gauge
+        for each provider. Agent-independent — works even without a live agent.
+        """
+        import subprocess, sys
+        script = os.path.expanduser("~/.hermes/scripts/usage.py")
+        if not os.path.exists(script):
+            print("  ⚠ usage.py not found")
+            return
+        try:
+            r = subprocess.run(
+                [sys.executable, script, "--json"],
+                capture_output=True, text=True, timeout=20,
+                cwd=os.path.expanduser("~"), stdin=subprocess.DEVNULL,
+            )
+        except subprocess.TimeoutExpired:
+            print("  ⚠ usage.py timed out")
+            return
+        if r.returncode != 0:
+            print(f"  ⚠ usage.py failed: {r.stderr[-200:]}")
+            return
+        import json
+        try:
+            data = json.loads(r.stdout)
+        except json.JSONDecodeError:
+            print(f"  ⚠ invalid output from usage.py")
+            return
+        providers = data.get("providers") or []
+        if not providers:
+            print("  no provider data")
+            return
+        for p in providers:
+            name = p.get("name", "?")
+            detail = p.get("detail", "")
+            err = p.get("error")
+            print()
+            if detail:
+                print(f"  {name}  {detail}")
+            else:
+                print(f"  {name}")
+            if err:
+                print(f"  ⚠ {err}")
+                continue
+            for w in (p.get("windows") or []):
+                label = w.get("label", "")
+                pct = w.get("pct", 0)
+                reset = w.get("reset", "")
+                filled = int(min(pct, 100) / 5)
+                bar = "█" * filled + "░" * (20 - filled)
+                extra = f" · {reset}" if reset else ""
+                print(f"  {label:<10} [{bar}] {pct:.0f}%{extra}")
+        print()
 
     def _show_insights(self, command: str = "/insights"):
         """Show usage insights and analytics from session history."""

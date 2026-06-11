@@ -208,6 +208,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("help", "Show available commands", "Info"),
     CommandDef("restart", "Gracefully restart the gateway after draining active runs", "Session",
                gateway_only=True),
+    CommandDef("credits", "Show provider credit balances", "Info"),
     CommandDef("usage", "Show token usage and rate limits for the current session", "Info"),
     CommandDef("insights", "Show usage insights and analytics", "Info",
                args_hint="[days]"),
@@ -543,6 +544,7 @@ _TELEGRAM_MENU_PRIORITY = (
     # Lower-priority but still useful operational built-ins.
     "reasoning",
     "usage",
+    "credits",
     "platforms",
     "platform",
     "profile",

@@ -3174,6 +3174,13 @@ def _make_agent(
 
 
 def _init_session(sid: str, key: str, agent, history: list, cols: int = 80):
+    # Ensure plugins (hooks) are loaded so post_tool_call / pre_llm_call
+    # fire in TUI sessions, not just in the gateway process.
+    try:
+        from hermes_cli.plugins import discover_plugins
+        discover_plugins()
+    except Exception:
+        pass
     now = time.time()
     with _sessions_lock:
         _sessions[sid] = {
@@ -9811,3 +9818,28 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5002, "command timed out (30s)")
     except Exception as e:
         return _err(rid, 5003, str(e))
+
+
+# ── Methods: provider usage ────────────────────────────────────────────
+
+
+@method("provider.usage")
+def _(rid, _params: dict) -> dict:
+    """Return provider credit usage (OpenCode Go, Command Code)."""
+    script = os.path.expanduser("~/.hermes/scripts/usage.py")
+    try:
+        r = subprocess.run(
+            [sys.executable, script, "--json"],
+            capture_output=True, text=True, timeout=20, cwd=os.path.expanduser("~"),
+            stdin=subprocess.DEVNULL,
+        )
+        if r.returncode != 0:
+            return _err(rid, 5001, f"usage.py exited {r.returncode}: {r.stderr[-500:]}")
+        data = json.loads(r.stdout)
+        return _ok(rid, data)
+    except subprocess.TimeoutExpired:
+        return _err(rid, 5002, "usage.py timed out (20s)")
+    except json.JSONDecodeError as e:
+        return _err(rid, 5003, f"usage.py output invalid: {e}")
+    except Exception as e:
+        return _err(rid, 5004, str(e))

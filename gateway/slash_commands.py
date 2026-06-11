@@ -3108,6 +3108,53 @@ class GatewaySlashCommandsMixin:
             return "\n".join(parts)
         return t("gateway.usage.no_data")
 
+    async def _handle_credits_command(self, event: MessageEvent) -> str:
+        """Handle /credits command -- show provider credit balances."""
+        import asyncio, json, subprocess, sys
+
+        script = os.path.expanduser("~/.hermes/scripts/usage.py")
+        if not os.path.exists(script):
+            return "⚠ usage.py not found"
+        try:
+            r = await asyncio.to_thread(
+                subprocess.run,
+                [sys.executable, script, "--json"],
+                capture_output=True, text=True, timeout=20,
+                cwd=os.path.expanduser("~"), stdin=subprocess.DEVNULL,
+            )
+        except subprocess.TimeoutExpired:
+            return "⚠ usage.py timed out"
+        if r.returncode != 0:
+            return f"⚠ usage.py failed: {r.stderr[-200:]}"
+        try:
+            data = json.loads(r.stdout)
+        except json.JSONDecodeError:
+            return "⚠ invalid output from usage.py"
+        providers = data.get("providers") or []
+        if not providers:
+            return "no provider data"
+        lines = []
+        for p in providers:
+            name = p.get("name", "?")
+            detail = p.get("detail", "")
+            err = p.get("error")
+            if detail:
+                lines.append(f"*{name}*  {detail}")
+            else:
+                lines.append(f"*{name}*")
+            if err:
+                lines.append(f"⚠ {err}")
+                continue
+            for w in (p.get("windows") or []):
+                label = w.get("label", "")
+                pct = w.get("pct", 0)
+                reset = w.get("reset", "")
+                filled = int(min(pct, 100) / 5)
+                bar = "█" * filled + "░" * (20 - filled)
+                extra = f" · {reset}" if reset else ""
+                lines.append(f"  {label}  [{bar}] {pct:.0f}%{extra}")
+        return "\n".join(lines)
+
     async def _handle_insights_command(self, event: MessageEvent) -> str:
         """Handle /insights command -- show usage insights and analytics."""
         args = event.get_command_args().strip()
