@@ -24,9 +24,9 @@ Architecture:
 2. Aggregator model synthesizes responses into a high-quality output
 3. Multiple layers can be used for iterative refinement (future enhancement)
 
-Models Used (via command-code proxy):
-- Reference Models: xiaomi/mimo-v2.5-pro, deepseek/deepseek-v4-flash, MiniMaxAI/MiniMax-M3
-- Aggregator Model: deepseek/deepseek-v4-pro
+Models Used (via opencode-go aggregator):
+- Reference Models: glm-5.2, mimo-v2.5-pro, minimax-m3
+- Aggregator Model: mimo-v2.5-pro (doubled-up — same model answers twice in different roles)
 
 Configuration:
     To customize the MoA setup, modify the configuration constants at the top of this file:
@@ -36,9 +36,11 @@ Configuration:
     - MIN_SUCCESSFUL_REFERENCES: Minimum successful models needed to proceed
 
 Provider:
-    Uses the 'command-code' provider from config.yaml (providers.command-code).
-    This is the local proxy at http://127.0.0.1:55990/v1 that fronts CommandCode's API.
-    Must be running before MoA is used.
+    Uses the 'opencode-go' provider (a paid aggregator at https://opencode.ai/zen/go/v1
+    that fronts multiple upstream model providers). Auth is via OPENCODE_GO_API_KEY
+    or OPENCODE_GO_AUTH_COOKIE environment variable.
+    Model names use the bare form (e.g. "deepseek-v4-flash"), not the openrouter-style
+    "vendor/model" prefix.
 
 Usage:
     from mixture_of_agents_tool import mixture_of_agents_tool
@@ -62,39 +64,42 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-# Lazy-initialized command-code async client (shared across all calls).
-_command_code_client = None
+# Lazy-initialized opencode-go async client (shared across all calls).
+_opencode_go_client = None
 
-def _get_command_code_client():
-    """Return a shared async client for the command-code provider.
+def _get_opencode_go_client():
+    """Return a shared async client for the opencode-go provider.
 
     Uses resolve_provider_client() to construct a properly authenticated
-    client from the 'command-code' provider definition in config.yaml.
+    client from the 'opencode-go' provider definition (a built-in
+    aggregator at https://opencode.ai/zen/go/v1).
     """
-    global _command_code_client
-    if _command_code_client is None:
-        client, _model = resolve_provider_client("command-code", async_mode=True)
+    global _opencode_go_client
+    if _opencode_go_client is None:
+        client, _model = resolve_provider_client("opencode-go", async_mode=True)
         if client is None:
             raise ValueError(
-                "Unable to resolve command-code provider — "
-                "check config.yaml providers.command-code"
+                "Unable to resolve opencode-go provider — "
+                "check OPENCODE_GO_API_KEY or OPENCODE_GO_AUTH_COOKIE environment variable"
             )
-        _command_code_client = client
-    return _command_code_client
+        _opencode_go_client = client
+    return _opencode_go_client
 
 
 # Configuration for MoA processing
 # Reference models - these generate diverse initial responses in parallel.
-# Must be models available on the command-code proxy (see config.yaml providers.command-code.models).
+# Must be models available on the opencode-go aggregator (bare names, no vendor prefix).
+# glm-5.2 (Zhipu), mimo-v2.5-pro (Xiaomi), minimax-m3 (Minimax).
+# Aggregator: mimo-v2.5-pro (same model in synthesis role — known to handle
+# the synthesize-from-references prompt well; doubled-up MoA pattern).
 REFERENCE_MODELS = [
-    "xiaomi/mimo-v2.5-pro",
-    "deepseek/deepseek-v4-flash",
-    "MiniMaxAI/MiniMax-M3",
+    "glm-5.2",
+    "mimo-v2.5-pro",
+    "minimax-m3",
 ]
 
 # Aggregator model - synthesizes reference responses into final output.
-# Use the strongest reasoning model available on command-code.
-AGGREGATOR_MODEL = "deepseek/deepseek-v4-pro"
+AGGREGATOR_MODEL = "mimo-v2.5-pro"
 
 # Temperature settings optimized for MoA performance
 REFERENCE_TEMPERATURE = 0.6  # Balanced creativity for diverse perspectives
@@ -162,7 +167,7 @@ async def _run_reference_model_safe(
             if not model.lower().startswith('gpt-'):
                 api_params["temperature"] = temperature
             
-            response = await _get_command_code_client().chat.completions.create(**api_params)
+            response = await _get_opencode_go_client().chat.completions.create(**api_params)
             
             content = extract_content_or_reasoning(response)
             if not content:
@@ -231,14 +236,14 @@ async def _run_aggregator_model(
     if not AGGREGATOR_MODEL.lower().startswith('gpt-'):
         api_params["temperature"] = temperature
 
-    response = await _get_command_code_client().chat.completions.create(**api_params)
+    response = await _get_opencode_go_client().chat.completions.create(**api_params)
 
     content = extract_content_or_reasoning(response)
 
     # Retry once on empty content (reasoning-only response)
     if not content:
         logger.warning("Aggregator returned empty content, retrying once")
-        response = await _get_command_code_client().chat.completions.create(**api_params)
+        response = await _get_opencode_go_client().chat.completions.create(**api_params)
         content = extract_content_or_reasoning(response)
 
     logger.info("Aggregation complete (%s characters)", len(content))
@@ -284,7 +289,7 @@ async def mixture_of_agents_tool(
              }
     
     Raises:
-        Exception: If MoA processing fails or command-code provider is unavailable
+        Exception: If MoA processing fails or opencode-go provider is unavailable
     """
     start_time = datetime.datetime.now()
     
@@ -311,11 +316,11 @@ async def mixture_of_agents_tool(
         logger.info("Starting Mixture-of-Agents processing...")
         logger.info("Query: %s", user_prompt[:100])
         
-        # Validate provider availability (command-code proxy must be running)
+        # Validate provider availability (opencode-go aggregator must be reachable)
         try:
-            _get_command_code_client()
+            _get_opencode_go_client()
         except ValueError as e:
-            raise ValueError(f"Command-code provider unavailable: {e}")
+            raise ValueError(f"Opencode-go provider unavailable: {e}")
         
         # Use provided models or defaults
         ref_models = reference_models or REFERENCE_MODELS
@@ -431,7 +436,7 @@ def check_moa_requirements() -> bool:
         bool: True if requirements are met, False otherwise
     """
     try:
-        _get_command_code_client()
+        _get_opencode_go_client()
         return True
     except ValueError:
         return False
@@ -463,16 +468,15 @@ if __name__ == "__main__":
     print("🤖 Mixture-of-Agents Tool Module")
     print("=" * 50)
     
-    # Check if command-code provider is available
+    # Check if opencode-go provider is available
     provider_available = check_moa_requirements()
-    
+
     if not provider_available:
-        print("❌ Command-code provider unavailable")
-        print("Ensure the command-code proxy is running and config.yaml has providers.command-code configured")
-        print("Provider defined at http://127.0.0.1:55990/v1")
+        print("❌ Opencode-go provider unavailable")
+        print("Ensure OPENCODE_GO_API_KEY or OPENCODE_GO_AUTH_COOKIE is set and the opencode.ai endpoint is reachable")
         sys.exit(1)
     else:
-        print("✅ Command-code provider available")
+        print("✅ Opencode-go provider available")
     
     print("🛠️  MoA tools ready for use!")
     
