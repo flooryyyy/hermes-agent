@@ -8640,28 +8640,53 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         Runs ~/.hermes/scripts/usage.py --json and renders a compact gauge
         for each provider. Agent-independent — works even without a live agent.
         """
-        from agent.account_usage import build_credits_view
-
-        view = build_credits_view()
-
-        if not view.logged_in:
-            print()
-            _cprint(f"  💳 {_d('Not logged into Nous Portal.')}")
-            print("  Run `hermes portal` to log in, then /credits.")
+        import subprocess, sys
+        script = os.path.expanduser("~/.hermes/scripts/usage.py")
+        if not os.path.exists(script):
+            print("  ⚠ usage.py not found")
             return
-        # Render credits view from the account_usage dataclass
-        print()
-        _cprint(f"  💳 {_b('Nous credits')}")
-        for line in view.balance_lines:
-            if line.lstrip().startswith("📈"):
+        try:
+            r = subprocess.run(
+                [sys.executable, script, "--json"],
+                capture_output=True, text=True, timeout=20,
+                cwd=os.path.expanduser("~"), stdin=subprocess.DEVNULL,
+            )
+        except subprocess.TimeoutExpired:
+            print("  ⚠ usage.py timed out")
+            return
+        if r.returncode != 0:
+            print(f"  ⚠ usage.py failed: {r.stderr[-200:]}")
+            return
+        import json
+        try:
+            data = json.loads(r.stdout)
+        except json.JSONDecodeError:
+            print(f"  ⚠ invalid output from usage.py")
+            return
+        providers = data.get("providers") or []
+        if not providers:
+            print("  no provider data")
+            return
+        for p in providers:
+            name = p.get("name", "?")
+            detail = p.get("detail", "")
+            err = p.get("error")
+            print()
+            if detail:
+                print(f"  {name}  {detail}")
+            else:
+                print(f"  {name}")
+            if err:
+                print(f"  ⚠ {err}")
                 continue
-            print(f"  {line}")
-        if view.identity_line:
-            print()
-            _cprint(f"  {_d(view.identity_line)}")
-        if view.topup_url:
-            print()
-            print(f"  Top up: {view.topup_url}")
+            for w in (p.get("windows") or []):
+                label = w.get("label", "")
+                pct = w.get("pct", 0)
+                reset = w.get("reset", "")
+                filled = int(min(pct, 100) / 5)
+                bar = "█" * filled + "░" * (20 - filled)
+                extra = f" · {reset}" if reset else ""
+                print(f"  {label:<10} [{bar}] {pct:.0f}%{extra}")
         print()
 
     # ------------------------------------------------------------------
