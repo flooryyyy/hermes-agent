@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 from typing import Any
@@ -22,7 +21,14 @@ def _get_controller() -> AgentController:
 
 
 def check_agent_control_requirements() -> bool:
-    return importlib.util.find_spec("acp") is not None
+    """ACP is native to hermes ('hermes acp' subcommand), not a pip package.
+    Check that the acp_adapter module (which spawns 'hermes acp --stdio')
+    imports cleanly — it's bundled with hermes-agent."""
+    try:
+        import acp_adapter.client  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
 
 def _json_result(payload: dict[str, Any]) -> str:
