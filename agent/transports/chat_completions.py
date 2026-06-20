@@ -160,6 +160,17 @@ class ChatCompletionsTransport(ProviderTransport):
           gateways (e.g. opencode-go, codex.nekos.me) reject with
           ``Extra inputs are not permitted, field: 'messages[N]._empty_recovery_synthetic'``,
           which then poisons every subsequent request in the session.
+        - Gateway metadata fields — ``timestamp``, ``message_id``,
+          ``observed``, ``finish_reason``. These are Hermes-internal
+          metadata written by the gateway session replay and the
+          persist-user-message-timestamp path (``run_agent.py:1497``).
+          They are NOT part of the OpenAI Chat Completions message schema.
+          Permissive providers silently ignore them, but strict providers
+          (Fireworks-backed GLM via opencode-go) reject with
+          ``Extra inputs are not permitted, field: 'messages[N].timestamp'``.
+          Stripping here (the single chokepoint before the API call) keeps
+          the metadata available for persistence/DB while never leaking it
+          to the wire.
         """
         strip_extra_content = not _model_consumes_thought_signature(
             kwargs.get("model")
@@ -172,6 +183,10 @@ class ChatCompletionsTransport(ProviderTransport):
                 "codex_reasoning_items" in msg
                 or "codex_message_items" in msg
                 or "tool_name" in msg
+                or "timestamp" in msg
+                or "message_id" in msg
+                or "observed" in msg
+                or "finish_reason" in msg
             ):
                 needs_sanitize = True
                 break
@@ -201,6 +216,15 @@ class ChatCompletionsTransport(ProviderTransport):
             msg.pop("codex_reasoning_items", None)
             msg.pop("codex_message_items", None)
             msg.pop("tool_name", None)
+            # Strip Hermes-internal gateway metadata fields. These are
+            # written by session replay / persist-user-message-timestamp
+            # and are not part of the OpenAI Chat Completions schema.
+            # Strict providers (Fireworks-backed GLM via opencode-go)
+            # reject them with HTTP 400 "Extra inputs are not permitted".
+            msg.pop("timestamp", None)
+            msg.pop("message_id", None)
+            msg.pop("observed", None)
+            msg.pop("finish_reason", None)
             # Drop all Hermes-internal scaffolding markers (``_``-prefixed).
             # OpenAI's message schema has no ``_``-prefixed fields, so this
             # is safe and future-proofs against new markers being added.

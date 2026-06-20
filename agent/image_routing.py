@@ -337,12 +337,16 @@ def decide_image_input_mode(
         return "text"
 
     # auto
-    if _explicit_aux_vision_override(cfg):
-        return "text"
-
+    # Check vision capability FIRST. If the active model has native vision,
+    # use it — even when an explicit aux vision backend is configured. The
+    # aux override is a fallback for non-vision models, not a force-override
+    # that blocks native vision when the main model can handle it.
     supports = _lookup_supports_vision(provider, model, cfg)
     if supports is True:
         return "native"
+
+    if _explicit_aux_vision_override(cfg):
+        return "text"
     return "text"
 
 
