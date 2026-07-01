@@ -183,7 +183,7 @@ class ChatCompletionsTransport(ProviderTransport):
                 "codex_reasoning_items" in msg
                 or "codex_message_items" in msg
                 or "tool_name" in msg
-                or "timestamp" in msg
+                or "timestamp" in msg  # #47868 — strict providers reject this
                 or "message_id" in msg
                 or "observed" in msg
                 or "finish_reason" in msg
@@ -219,9 +219,10 @@ class ChatCompletionsTransport(ProviderTransport):
             # Strip Hermes-internal gateway metadata fields. These are
             # written by session replay / persist-user-message-timestamp
             # and are not part of the OpenAI Chat Completions schema.
-            # Strict providers (Fireworks-backed GLM via opencode-go)
+            # Strict providers (Fireworks-backed GLM via opencode-go,
+            # and anything going through #47868 strict-provider checks)
             # reject them with HTTP 400 "Extra inputs are not permitted".
-            msg.pop("timestamp", None)
+            msg.pop("timestamp", None)  # #47868 — leak into strict providers
             msg.pop("message_id", None)
             msg.pop("observed", None)
             msg.pop("finish_reason", None)
@@ -459,10 +460,6 @@ class ChatCompletionsTransport(ProviderTransport):
                     extra_body["extra_body"] = openai_compat_extra
             elif raw_thinking_config:
                 extra_body["thinking_config"] = raw_thinking_config
-        elif provider_name == "google-gemini-cli":
-            thinking_config = _build_gemini_thinking_config(model, reasoning_config)
-            if thinking_config:
-                extra_body["thinking_config"] = thinking_config
 
         # Merge any pre-built extra_body additions
         additions = params.get("extra_body_additions")
@@ -645,7 +642,7 @@ class ChatCompletionsTransport(ProviderTransport):
                 tc_provider_data: dict[str, Any] = {}
                 extra = getattr(tc, "extra_content", None)
                 if extra is None and hasattr(tc, "model_extra"):
-                    extra = (tc.model_extra or {}).get("extra_content")
+                    extra = (tc.model_extra if isinstance(tc.model_extra, dict) else {}).get("extra_content")
                 if extra is not None:
                     if hasattr(extra, "model_dump"):
                         try:
