@@ -822,7 +822,7 @@ def _handle_create(args: dict, **kw) -> str:
 
             # Auto-subscribe the originating session so the agent that
             # dispatched this task gets notified when it completes / blocks.
-            _maybe_auto_subscribe(conn, new_tid)
+            _maybe_auto_subscribe(conn, new_tid, parent_task_ids=tuple(parents or ()))
 
             return _ok(
                 task_id=new_tid,
@@ -837,10 +837,18 @@ def _handle_create(args: dict, **kw) -> str:
         return tool_error(f"kanban_create: {e}")
 
 
-def _maybe_auto_subscribe(conn: Any, task_id: str) -> None:
+def _maybe_auto_subscribe(
+    conn: Any,
+    task_id: str,
+    parent_task_ids: tuple[str, ...] = (),
+) -> None:
     """Auto-subscribe the calling session to task completion / block events.
 
     Subscription paths:
+    - Parent-inherited: when the new task has parents, copy any real-platform
+      (non-tui) subscriptions from the parent tasks.  This is the common path
+      for kanban workers — the originating user subscribed from Telegram/
+      Discord, and child tasks should inherit that subscription.
     - Gateway (telegram/discord): uses HERMES_SESSION_PLATFORM + CHAT_ID from
       contextvars, set by the messaging gateway before agent dispatch.
     - TUI (herm): platform/chat_id contextvars are empty but
@@ -853,6 +861,38 @@ def _maybe_auto_subscribe(conn: Any, task_id: str) -> None:
     Failure is silent — best-effort.
     """
     try:
+        # --- Path 1: inherit subscriptions from parent tasks ---------------
+        # When a worker creates a child task, it runs in a TUI session whose
+        # platform context is useless for gateway delivery.  Instead, copy
+        # real-platform subscriptions from the parent task(s).
+        if parent_task_ids:
+            from hermes_cli import kanban_db as _kb
+            seen: set[tuple[str, str, str]] = set()  # (platform, chat_id, thread_id)
+            for pid in parent_task_ids:
+                for sub in _kb.list_notify_subs(conn, task_id=pid):
+                    p = sub.get("platform", "")
+                    c = sub.get("chat_id", "")
+                    t = sub.get("thread_id", "")
+                    key = (p, c, t)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    # Skip tui subscriptions — they can't be delivered by
+                    # the gateway notifier.
+                    if p == "tui":
+                        continue
+                    _kb.add_notify_sub(
+                        conn, task_id=task_id,
+                        platform=p, chat_id=c,
+                        thread_id=t or None,
+                        user_id=sub.get("user_id"),
+                        notifier_profile=sub.get("notifier_profile"),
+                    )
+            # If we copied at least one real subscription, we're done.
+            if seen and any(p != "tui" for p, _, _ in seen):
+                return
+
+        # --- Path 2: subscribe from the current session context -----------
         from gateway.session_context import get_session_env
         platform = get_session_env("HERMES_SESSION_PLATFORM", "")
         chat_id = get_session_env("HERMES_SESSION_CHAT_ID", "")

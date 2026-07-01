@@ -322,6 +322,9 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
         "step-3.5-flash",
         "step-3.5-flash-2603",
     ],
+    "longcat": [
+        "LongCat-2.0",
+    ],
     "moonshot": [
         "kimi-k2.6",
         "kimi-k2.5",
@@ -1035,6 +1038,7 @@ CANONICAL_PROVIDERS: list[ProviderEntry] = [
     ProviderEntry("kimi-coding",    "Kimi / Kimi Coding Plan",  "Kimi Coding Plan (api.kimi.com & Moonshot API)"),
     ProviderEntry("kimi-coding-cn", "Kimi / Moonshot (China)",  "Kimi / Moonshot China (Domestic direct API)"),
     ProviderEntry("stepfun",        "StepFun Step Plan",       "StepFun Step Plan (Agent / coding models via Step Plan API)"),
+    ProviderEntry("longcat",        "LongCat",                  "LongCat (Meituan LongCat models via OpenAI-compatible API)"),
     ProviderEntry("minimax",        "MiniMax",                  "MiniMax (Global direct API)"),
     ProviderEntry("minimax-oauth",  "MiniMax (OAuth)",          "MiniMax via OAuth browser login (Coding Plan, minimax.io)"),
     ProviderEntry("minimax-cn",     "MiniMax (China)",          "MiniMax China (Domestic direct API)"),
@@ -1196,6 +1200,8 @@ _PROVIDER_ALIASES = {
     "moonshot-cn": "kimi-coding-cn",
     "step": "stepfun",
     "stepfun-coding-plan": "stepfun",
+    "long-cat": "longcat",
+    "meituan-longcat": "longcat",
     "arcee-ai": "arcee",
     "arceeai": "arcee",
     "gmi-cloud": "gmi",
