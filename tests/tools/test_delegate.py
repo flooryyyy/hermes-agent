@@ -154,7 +154,6 @@ class TestStripBlockedTools(unittest.TestCase):
             "terminal",
             "file",
             "delegation",
-            "agent_control",
             "clarify",
             "memory",
             "code_execution",
