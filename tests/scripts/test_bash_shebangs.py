@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -106,6 +107,25 @@ def test_git_scope_lookup_failure_exits_two():
     result = run_checker("--diff", "not-a-real-ref-for-shebang-policy")
     assert result.returncode == 2
     assert "git diff" in result.stderr
+
+
+def test_git_scope_lookup_permission_failure_fails_closed(monkeypatch):
+    spec = importlib.util.spec_from_file_location("check_bash_shebangs", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    checker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(checker)
+
+    def raise_permission(*_args, **_kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(checker.subprocess, "check_output", raise_permission)
+
+    try:
+        checker.git_paths(["git", "diff"])
+    except checker.GitLookupError as exc:
+        assert "git diff failed" in str(exc)
+    else:
+        raise AssertionError("permission failure did not become GitLookupError")
 
 
 def test_scan_catches_markdown_and_honors_above_line_suppression(tmp_path):

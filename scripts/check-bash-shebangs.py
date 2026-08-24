@@ -114,7 +114,7 @@ def git_paths(command: list[str]) -> list[Path]:
             encoding="utf-8",
             errors="replace",
         )
-    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+    except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired) as exc:
         raise GitLookupError(f"{' '.join(command)} failed: {exc}") from exc
     return [REPO_ROOT / name for name in output.splitlines() if name.strip()]
 
