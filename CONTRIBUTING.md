@@ -838,9 +838,10 @@ that touches the OS, assume *any* platform can hit your code path.
     intentional inline exception must be written as `# shebang: ok <reason>`
     on the line immediately above the match; a bare `ok` is rejected. A
     whole-file exception must be a repo-relative POSIX glob with a required
-    trailing `# reason` in an allowlist passed with `--allowlist`. Absolute,
-    parent-traversing, and reasonless entries are rejected. The checker exits
-    2 (not clean) for missing paths, traversal/read failures, or unverifiable
+    trailing `# reason` in an allowlist passed with `--allowlist`. `*` stays
+    within one path component; use `**` when matching nested directories.
+    Absolute, parent-traversing, and reasonless entries are rejected. The
+    checker exits 2 (not clean) for missing paths, traversal/read failures, or unverifiable
     git scope. Pull requests run it on the changed-file diff; pushes to main
     run the full-repository scan. See `scripts/check-bash-shebangs.py`.
 

@@ -127,6 +127,7 @@ _SHEBANG_SUFFIXES = (
     ".jsx",
     ".json",
     ".md",
+    ".markdown",
     ".mdx",
     ".nix",
     ".ps1",
@@ -146,7 +147,7 @@ _SHEBANG_SUFFIXES = (
 def _is_docs(p: str) -> bool:
     if p.startswith(("skills/", "optional-skills/")):
         return False
-    return p.endswith((".md", ".mdx")) or p.startswith("docs/") or p.startswith("LICENSE")
+    return p.endswith((".md", ".markdown", ".mdx")) or p.startswith("docs/") or p.startswith("LICENSE")
 
 
 def _is_nix(p: str) -> bool:

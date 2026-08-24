@@ -38,6 +38,15 @@ def test_markdown_only_fixture_is_checked(tmp_path):
     assert "guide.md:2" in result.stdout
 
 
+def test_markdown_extension_is_checked(tmp_path):
+    markdown = tmp_path / "guide.markdown"
+    bad_shebang = "#!" + "/bin/bash\n"
+    markdown.write_text(f"```bash\n{bad_shebang}```\n", encoding="utf-8")
+    result = run_checker(str(markdown))
+    assert result.returncode == 1
+    assert "guide.markdown:2" in result.stdout
+
+
 def test_bare_inline_allowance_is_rejected(tmp_path):
     script = tmp_path / "bare-ok.sh"
     script.write_text(
@@ -171,6 +180,31 @@ def test_allowlist_skips_matched_paths_but_not_others():
     finally:
         allowed_file.unlink(missing_ok=True)
         other_file.unlink(missing_ok=True)
+        allowlist.unlink(missing_ok=True)
+
+
+def test_allowlist_glob_does_not_cross_path_separators():
+    allowed_file = REPO_ROOT / "tests/scripts/_temporary-allowlist-top.sh"
+    nested_file = REPO_ROOT / "tests/scripts/_temporary-allowlist-nested/evil.sh"
+    allowed_file.write_text("#!" + "/bin/bash\n", encoding="utf-8")
+    nested_file.parent.mkdir(exist_ok=True)
+    nested_file.write_text("#!" + "/bin/bash\n", encoding="utf-8")
+    allowlist = REPO_ROOT / "tests/scripts/_temporary-shebang-allowlist.txt"
+    allowlist.write_text(
+        "tests/scripts/*.sh # only direct scripts under tests/scripts\n",
+        encoding="utf-8",
+    )
+    try:
+        result = run_checker("--allowlist", str(allowlist), str(allowed_file))
+        assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+
+        result = run_checker("--allowlist", str(allowlist), str(nested_file))
+        assert result.returncode == 1
+        assert "tests/scripts/_temporary-allowlist-nested/evil.sh:1" in result.stdout
+    finally:
+        allowed_file.unlink(missing_ok=True)
+        nested_file.unlink(missing_ok=True)
+        nested_file.parent.rmdir()
         allowlist.unlink(missing_ok=True)
 
 

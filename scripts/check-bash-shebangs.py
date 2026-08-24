@@ -17,13 +17,12 @@ Exit codes: 0 clean, 1 violations, 2 scope/read/tooling error.
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import os
 import re
 import stat
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -38,6 +37,7 @@ TEXT_SUFFIXES = {
     ".jsx",
     ".json",
     ".md",
+    ".markdown",
     ".mdx",
     ".nix",
     ".ps1",
@@ -264,14 +264,7 @@ def main(argv: list[str]) -> int:
     files_scanned = 0
     for path in files:
         rel = display_path(path)
-        if any(
-            fnmatch.fnmatchcase(rel, pattern)
-            or (
-                "/" not in pattern
-                and fnmatch.fnmatchcase(Path(rel).name, pattern)
-            )
-            for pattern in allowlist
-        ):
+        if any(PurePosixPath(rel).match(pattern) for pattern in allowlist):
             continue
         try:
             lines = path.read_text(

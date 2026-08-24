@@ -40,11 +40,14 @@ jobs:
             BASE_SHA="$PUSH_BEFORE_SHA"
           fi
 
-          # The first push has an all-zero `before` SHA. Use the root commit
-          # in that case, while still failing closed on malformed SHAs.
+          # The first push has an all-zero `before` SHA. Scan HEAD directly
+          # in that case so the root commit is included; do not pick an
+          # arbitrary root when a repository has multiple roots. Malformed
+          # non-initial baselines still fail closed.
+          INITIAL_PUSH=false
           if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
             if [ "$EVENT_NAME" = "push" ] && [[ "$BASE_SHA" =~ ^0+$ ]]; then
-              BASE_SHA=$(git rev-list --max-parents=0 HEAD | tail -1)
+              INITIAL_PUSH=true
             else
               echo "::error::Unable to resolve attribution baseline: $BASE_SHA"
               exit 2
@@ -52,7 +55,11 @@ jobs:
           fi
 
           # Find any new author emails after the event's real baseline.
-          NEW_EMAILS=$(git log "${BASE_SHA}..HEAD" --format='%ae' --no-merges | sort -u)
+          if [ "$INITIAL_PUSH" = true ]; then
+            NEW_EMAILS=$(git log HEAD --format='%ae' --no-merges | sort -u)
+          else
+            NEW_EMAILS=$(git log "${BASE_SHA}..HEAD" --format='%ae' --no-merges | sort -u)
+          fi
 
           if [ -z "$NEW_EMAILS" ]; then
             echo "No new commits to check."
