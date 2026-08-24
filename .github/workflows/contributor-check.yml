@@ -42,16 +42,15 @@ jobs:
 
           # The first push has an all-zero `before` SHA. Scan HEAD directly
           # in that case so the root commit is included; do not pick an
-          # arbitrary root when a repository has multiple roots. Malformed
-          # non-initial baselines still fail closed.
+          # arbitrary root when a repository has multiple roots. Baselines
+          # must be literal 40-character commit SHAs, never Git revisions.
           INITIAL_PUSH=false
-          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-            if [ "$EVENT_NAME" = "push" ] && [[ "$BASE_SHA" =~ ^0+$ ]]; then
-              INITIAL_PUSH=true
-            else
-              echo "::error::Unable to resolve attribution baseline: $BASE_SHA"
-              exit 2
-            fi
+          ZERO_SHA="0000000000000000000000000000000000000000"
+          if [ "$EVENT_NAME" = "push" ] && [ "$BASE_SHA" = "$ZERO_SHA" ]; then
+            INITIAL_PUSH=true
+          elif [[ ! "$BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::Unable to resolve attribution baseline: $BASE_SHA"
+            exit 2
           fi
 
           # Find any new author emails after the event's real baseline.
