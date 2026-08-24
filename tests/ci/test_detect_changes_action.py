@@ -14,6 +14,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ACTION = REPO_ROOT / ".github" / "actions" / "detect-changes" / "action.yml"
+CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yaml"
+HISTORY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "history-check.yml"
 
 
 def _collection_script() -> str:
@@ -27,14 +29,18 @@ def _run_collection(
     tmp_path: Path,
     *,
     metadata: str,
+    metadata_after_files: str | None = None,
     files: str,
 ) -> subprocess.CompletedProcess[str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     log = tmp_path / "gh.log"
     metadata_file = tmp_path / "metadata"
+    metadata_after_file = tmp_path / "metadata-after"
+    metadata_calls_file = tmp_path / "metadata-calls"
     files_file = tmp_path / "files"
     metadata_file.write_text(metadata, encoding="utf-8")
+    metadata_after_file.write_text(metadata_after_files or "", encoding="utf-8")
     files_file.write_text(files, encoding="utf-8")
     fake_gh = bin_dir / "gh"
     fake_gh.write_text(
@@ -43,7 +49,18 @@ printf '%s\\n' \"$*\" >> {shlex.quote(str(log))}
 for arg in \"$@\"; do
   case \"$arg\" in
     repos/acme/hermes/pulls/7/files*) cat {shlex.quote(str(files_file))}; exit 0 ;;
-    repos/acme/hermes/pulls/7) cat {shlex.quote(str(metadata_file))}; printf '%s\\n' ''; exit 0 ;;
+    repos/acme/hermes/pulls/7)
+      calls=0
+      [ -f {shlex.quote(str(metadata_calls_file))} ] && calls=$(cat {shlex.quote(str(metadata_calls_file))})
+      calls=$((calls + 1))
+      printf '%s' "$calls" > {shlex.quote(str(metadata_calls_file))}
+      if [ "$calls" -gt 1 ] && [ -s {shlex.quote(str(metadata_after_file))} ]; then
+        cat {shlex.quote(str(metadata_after_file))}
+      else
+        cat {shlex.quote(str(metadata_file))}
+      fi
+      printf '%s\\n' ''
+      exit 0 ;;
     repos/acme/hermes/compare/*) printf '%s\\n' 'old-path.py'; exit 0 ;;
   esac
 done
@@ -117,3 +134,40 @@ def test_collection_fails_open_on_unusable_pr_file_metadata(
     assert "::warning::" in result.stdout
     assert "/pulls/7/files?per_page=100" not in _log(tmp_path)
     assert "/compare/" not in _log(tmp_path)
+
+
+def test_collection_fails_open_if_pr_changes_after_file_pagination(tmp_path: Path) -> None:
+    result = _run_collection(
+        tmp_path,
+        metadata=f'{"a" * 40}\t{"b" * 40}\t2',
+        metadata_after_files=f'{"a" * 40}\t{"c" * 40}\t2',
+        files="stale.py\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.endswith("CHANGED_BEGIN\nCHANGED_END\n")
+    assert "changed during file collection" in result.stdout
+
+
+def test_detector_timeout_covers_paginated_file_collection() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    detect_block = workflow.split("  detect:\n", 1)[1].split("\n  # ", 1)[0]
+
+    assert "timeout-minutes: 5" in detect_block
+
+
+def test_contributor_attribution_runs_for_every_pull_request() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    contributor_block = workflow.split("  contributor-check:\n", 1)[1].split("\n  uv-lockfile:", 1)[0]
+
+    assert "if: needs.detect.outputs.event_name == 'pull_request'" in contributor_block
+    assert "if: needs.detect.outputs.python == 'true'" not in contributor_block
+
+
+def test_history_check_uses_the_pull_request_base_sha() -> None:
+    workflow = HISTORY_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "base_sha:" in workflow
+    assert 'PR_BASE_SHA: ${{ inputs.base_sha }}' in workflow
+    assert 'git merge-base "$PR_BASE_SHA" HEAD' in workflow
+    assert "origin/main" not in workflow

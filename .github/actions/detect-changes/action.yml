@@ -96,17 +96,19 @@ runs:
           #
           # Retried: a rate-limit blip or eventual-consistency 404 on a
           # freshly-pushed HEAD would otherwise silently fall open (all lanes
-          # run — safe, but wasteful and it masks the API failure).
+          # run — safe, but wasteful and it masks the API failure). Each API
+          # command is bounded because --paginate can make up to 30 requests.
           CHANGED=""
           if [[ ! "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
             echo "::warning::pull request number is unavailable — failing open (all lanes run)"
           else
             for i in 1 2 3; do
+              CHANGED=""
               PR_METADATA=""
               CURRENT_BASE=""
               CURRENT_HEAD=""
               CHANGED_COUNT=""
-              if PR_METADATA="$(gh api \
+              if PR_METADATA="$(timeout --signal=TERM 30s gh api \
                 "repos/${REPO}/pulls/${PR_NUMBER}" \
                 --jq '[.base.sha, .head.sha, .changed_files] | @tsv')"; then
                 IFS=$'\t' read -r CURRENT_BASE CURRENT_HEAD CHANGED_COUNT <<< "$PR_METADATA"
@@ -118,11 +120,30 @@ runs:
                   echo "::warning::pull request file count is unavailable or exceeds the API limit — failing open (all lanes run)"
                   break
                 fi
-                if CHANGED="$(gh api \
+                if CHANGED="$(timeout --signal=TERM 30s gh api \
                   --paginate \
                   "repos/${REPO}/pulls/${PR_NUMBER}/files?per_page=100" \
                   --jq '.[].filename')"; then
-                  break
+                  POST_METADATA=""
+                  POST_BASE=""
+                  POST_HEAD=""
+                  POST_COUNT=""
+                  if POST_METADATA="$(timeout --signal=TERM 30s gh api \
+                    "repos/${REPO}/pulls/${PR_NUMBER}" \
+                    --jq '[.base.sha, .head.sha, .changed_files] | @tsv')"; then
+                    IFS=$'\t' read -r POST_BASE POST_HEAD POST_COUNT <<< "$POST_METADATA"
+                    if [ "$POST_BASE" != "$BASE_SHA" ] || [ "$POST_HEAD" != "$HEAD_SHA" ]; then
+                      echo "::warning::pull request changed during file collection — failing open (all lanes run)"
+                      CHANGED=""
+                      break
+                    fi
+                    if [[ ! "$POST_COUNT" =~ ^[0-9]+$ ]] || [ "$POST_COUNT" -gt 3000 ]; then
+                      echo "::warning::pull request file count changed or exceeds the API limit — failing open (all lanes run)"
+                      CHANGED=""
+                      break
+                    fi
+                    break
+                  fi
                 fi
               fi
               if [ "$i" = 3 ]; then

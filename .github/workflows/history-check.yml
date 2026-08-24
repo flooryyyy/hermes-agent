@@ -1,6 +1,6 @@
 name: History Check
 
-# Rejects PRs whose branch has no common ancestor with main.
+# Rejects PRs whose branch has no common ancestor with the PR base.
 #
 # In May 2026 PR #25045 was merged from a branch that had been disconnected
 # from main's history (likely an accidental `git checkout --orphan` or
@@ -11,10 +11,15 @@ name: History Check
 # onto that single commit.
 #
 # This check catches the failure mode by requiring `git merge-base` between
-# the PR head and main to be non-empty.
+# the PR head and the actual PR base to be non-empty.
 
 on:
   workflow_call:
+    inputs:
+      base_sha:
+        description: "The pull request's actual base commit SHA."
+        required: true
+        type: string
     outputs:
       review_status:
         description: "JSON array of review_status objects for the synthesizer."
@@ -35,18 +40,20 @@ jobs:
           fetch-depth: 0 # full history both sides for merge-base
 
       - id: merge-base-check
-        name: Reject PRs with no common ancestor on main
+        name: Reject PRs with no common ancestor with the PR base
+        env:
+          PR_BASE_SHA: ${{ inputs.base_sha }}
         run: |
           # `git merge-base` exits non-zero AND prints nothing when the two
           # commits share no ancestor.  We check both conditions explicitly
           # so the failure message is clear regardless of which signal fires
           # first.
-          if ! BASE=$(git merge-base origin/main HEAD 2>/dev/null) || [ -z "$BASE" ]; then
-            STATUS='[{"source":"unrelated histories","results":[{"kind":"action_required","title":"Unrelated histories","summary":"This PR has no common ancestor with main.","detail":"","how_to_fix":"Rebase your changes onto current main:\n```\ngit fetch origin main\ngit checkout -b fix-branch origin/main\n# re-apply your changes (cherry-pick, copy files, etc.)\ngit push -f origin fix-branch\n```\n"}]}]'
+          if ! BASE=$(git merge-base "$PR_BASE_SHA" HEAD 2>/dev/null) || [ -z "$BASE" ]; then
+            STATUS='[{"source":"unrelated histories","results":[{"kind":"action_required","title":"Unrelated histories","summary":"This PR has no common ancestor with its base branch.","detail":"","how_to_fix":"Rebase your changes onto the current base branch:\n```\ngit fetch origin <base-branch>\ngit checkout -b fix-branch origin/<base-branch>\n# re-apply your changes (cherry-pick, copy files, etc.)\ngit push -f origin fix-branch\n```\n"}]}]'
             echo "review_status=${STATUS}" >> "$GITHUB_OUTPUT"
             echo "review_status=${STATUS}" > review-status.json
             echo ""
-            echo "::error::This PR has no common ancestor with main."
+            echo "::error::This PR has no common ancestor with its base branch."
             echo ""
             echo "Your branch's history is disconnected from main.  Common causes:"
             echo "  - the branch was created with 'git checkout --orphan'"
@@ -58,9 +65,9 @@ jobs:
             echo "Reference: PR #25045 caused this and re-rooted blame on ~1500"
             echo "files to a single orphan commit."
             echo ""
-            echo "To fix, rebase your changes onto current main:"
-            echo "  git fetch origin main"
-            echo "  git checkout -b fix-branch origin/main"
+            echo "To fix, rebase your changes onto the current base branch:"
+            echo "  git fetch origin <base-branch>"
+            echo "  git checkout -b fix-branch origin/<base-branch>"
             echo "  # re-apply your changes (cherry-pick, copy files, etc.)"
             echo "  git push -f origin fix-branch"
             exit 1
