@@ -58,6 +58,16 @@ def test_allowlist_entries_require_a_reason(tmp_path):
     assert "trailing # reason" in result.stderr
 
 
+def test_allowlist_entries_require_a_repo_relative_path(tmp_path):
+    script = tmp_path / "shim.sh"
+    script.write_text("#!" + "/bin/bash\n", encoding="utf-8")
+    allowlist = tmp_path / "allowlist.txt"
+    allowlist.write_text("shim.sh # local shim\n", encoding="utf-8")
+    result = run_checker("--allowlist", str(allowlist), str(script))
+    assert result.returncode == 2
+    assert "repo-relative POSIX glob" in result.stderr
+
+
 def test_reasoned_repo_relative_allowlist_can_skip_a_specific_file():
     fixture = REPO_ROOT / "tests/scripts/_temporary-shebang-allowlist-fixture.sh"
     allowlist = REPO_ROOT / "tests/scripts/_temporary-shebang-allowlist.txt"
@@ -139,25 +149,29 @@ def test_bare_ok_variants_do_not_suppress(tmp_path):
         assert "shebang" in result.stdout
 
 
-def test_allowlist_skips_matched_paths_but_not_others(tmp_path):
-    allowed_file = tmp_path / "termux-shim.sh"
+def test_allowlist_skips_matched_paths_but_not_others():
+    allowed_file = REPO_ROOT / "tests/scripts/_temporary-termux-shim.sh"
     allowed_file.write_text("#!" + "/bin/bash\n", encoding="utf-8")
-    other_file = tmp_path / "normal.sh"
+    other_file = REPO_ROOT / "tests/scripts/_temporary-normal.sh"
     other_file.write_text("#!" + "/bin/bash\n", encoding="utf-8")
 
-    allowlist = tmp_path / "allowlist.txt"
+    allowlist = REPO_ROOT / "tests/scripts/_temporary-shebang-allowlist.txt"
     allowlist.write_text(
         "# termux launcher shim: no usable env at kernel exec time\n"
-        "termux-shim.sh # platform shim\n",
+        "tests/scripts/_temporary-termux-shim.sh # platform shim\n",
         encoding="utf-8",
     )
+    try:
+        result = run_checker("--allowlist", str(allowlist), str(allowed_file))
+        assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
 
-    result = run_checker("--allowlist", str(allowlist), str(allowed_file))
-    assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
-
-    result = run_checker("--allowlist", str(allowlist), str(other_file))
-    assert result.returncode == 1
-    assert "normal.sh:1" in result.stdout
+        result = run_checker("--allowlist", str(allowlist), str(other_file))
+        assert result.returncode == 1
+        assert "tests/scripts/_temporary-normal.sh:1" in result.stdout
+    finally:
+        allowed_file.unlink(missing_ok=True)
+        other_file.unlink(missing_ok=True)
+        allowlist.unlink(missing_ok=True)
 
 
 def test_missing_allowlist_file_fails_closed(tmp_path):

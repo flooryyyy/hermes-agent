@@ -131,6 +131,7 @@ def _validate_allowlist_pattern(pattern: str, line_number: int) -> None:
         or pattern.startswith("/")
         or pattern.startswith("./")
         or "\\" in pattern
+        or "/" not in pattern
         or any(part == ".." for part in pattern.split("/"))
         or any(char.isspace() for char in pattern)
     ):
