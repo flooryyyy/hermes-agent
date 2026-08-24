@@ -81,6 +81,7 @@ runs:
         EVENT_NAME: ${{ github.event_name }}
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
         HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
       run: |
         set -euo pipefail
 
@@ -88,37 +89,51 @@ runs:
         # dispatch) leave CHANGED empty, so the classifier fails open and every
         # lane runs. Post-merge / on-demand validation is never weakened.
         if [ "$EVENT_NAME" = "pull_request" ]; then
-          # Use the compare endpoint with the pinned base/head SHAs from the
-          # event payload instead of the "current PR files" endpoint. The SHAs
-          # are frozen at trigger time, so the file list is deterministic even
-          # if the PR receives a new push between trigger and detect.
+          # Use the pull-request files endpoint instead of the compare endpoint.
+          # Compare responses expose only the first 300 changed files, while
+          # pull-request file pages expose up to 3000. Keep the event's pinned
+          # base/head SHAs as a guard against a PR changing during this run.
           #
           # Retried: a rate-limit blip or eventual-consistency 404 on a
           # freshly-pushed HEAD would otherwise silently fall open (all lanes
           # run — safe, but wasteful and it masks the API failure).
-          #
-          # `.files[]?` (null-safe): with --paginate, a PR more than 100
-          # commits ahead of its merge-base paginates the compare, and pages
-          # after the first carry `files: null` — bare `.files[]` makes jq
-          # die with "cannot iterate over: null", which fails every retry
-          # and forces the fail-open path (seen on stacked PRs). The full
-          # file list (up to the API's 300-file cap) is on page one.
           CHANGED=""
-          for i in 1 2 3; do
-            if CHANGED="$(gh api \
-              --paginate \
-              "repos/${REPO}/compare/${BASE_SHA}...${HEAD_SHA}" \
-              --jq '.files[]?.filename')"; then
-              break
-            fi
-            if [ "$i" = 3 ]; then
-              echo "::warning::compare API failed after 3 attempts — failing open (all lanes run)"
-              CHANGED=""
-              break
-            fi
-            echo "::warning::compare API failed (attempt $i); retrying in 10s"
-            sleep 10
-          done
+          if [[ ! "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "::warning::pull request number is unavailable — failing open (all lanes run)"
+          else
+            for i in 1 2 3; do
+              PR_METADATA=""
+              CURRENT_BASE=""
+              CURRENT_HEAD=""
+              CHANGED_COUNT=""
+              if PR_METADATA="$(gh api \
+                "repos/${REPO}/pulls/${PR_NUMBER}" \
+                --jq '[.base.sha, .head.sha, .changed_files] | @tsv')"; then
+                IFS=$'\t' read -r CURRENT_BASE CURRENT_HEAD CHANGED_COUNT <<< "$PR_METADATA"
+                if [ "$CURRENT_BASE" != "$BASE_SHA" ] || [ "$CURRENT_HEAD" != "$HEAD_SHA" ]; then
+                  echo "::warning::pull request changed during detection — failing open (all lanes run)"
+                  break
+                fi
+                if [[ ! "$CHANGED_COUNT" =~ ^[0-9]+$ ]] || [ "$CHANGED_COUNT" -gt 3000 ]; then
+                  echo "::warning::pull request file count is unavailable or exceeds the API limit — failing open (all lanes run)"
+                  break
+                fi
+                if CHANGED="$(gh api \
+                  --paginate \
+                  "repos/${REPO}/pulls/${PR_NUMBER}/files?per_page=100" \
+                  --jq '.[].filename')"; then
+                  break
+                fi
+              fi
+              if [ "$i" = 3 ]; then
+                echo "::warning::pull request files API failed after 3 attempts — failing open (all lanes run)"
+                CHANGED=""
+                break
+              fi
+              echo "::warning::pull request files API failed (attempt $i); retrying in 10s"
+              sleep 10
+            done
+          fi
         fi
 
         echo "Changed files:"

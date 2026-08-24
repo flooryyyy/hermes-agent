@@ -6,8 +6,8 @@ changed files with ``--diff REF``, or explicit files/directories. Markdown and
 embedded generated-script strings are checked as well as shell scripts.
 
 Suppressions require ``# shebang: ok <reason>`` on the line immediately above
-the match; a bare marker is rejected. Whole-file exceptions use a repo-relative
-POSIX glob with a required trailing ``# reason`` in the file passed to
+the match; a bare marker is rejected. Whole-file exceptions use a root-anchored
+repo-relative POSIX glob with a required trailing ``# reason`` in the file passed to
 ``--allowlist``. Missing paths, filesystem errors, and failed git scope lookups
 fail closed with exit status 2.
 
@@ -22,6 +22,8 @@ import re
 import stat
 import subprocess
 import sys
+from fnmatch import fnmatchcase
+from functools import cache
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
@@ -227,6 +229,28 @@ def display_path(path: Path) -> str:
         return str(path)
 
 
+def _allowlist_matches(path: str, pattern: str) -> bool:
+    """Match a repo-relative glob from the repository root."""
+    path_parts = PurePosixPath(path).parts
+    pattern_parts = PurePosixPath(pattern).parts
+
+    @cache
+    def match(path_index: int, pattern_index: int) -> bool:
+        if pattern_index == len(pattern_parts):
+            return path_index == len(path_parts)
+        if pattern_parts[pattern_index] == "**":
+            return match(path_index, pattern_index + 1) or (
+                path_index < len(path_parts) and match(path_index + 1, pattern_index)
+            )
+        return (
+            path_index < len(path_parts)
+            and fnmatchcase(path_parts[path_index], pattern_parts[pattern_index])
+            and match(path_index + 1, pattern_index + 1)
+        )
+
+    return match(0, 0)
+
+
 def report(path: str, lineno: int, line: str, *, embedded: bool) -> None:
     kind = "embedded /bin/bash shebang string" if embedded else "hardcoded /bin/bash shebang"
     print(f"{path}:{lineno}: [{kind}]")
@@ -264,7 +288,7 @@ def main(argv: list[str]) -> int:
     files_scanned = 0
     for path in files:
         rel = display_path(path)
-        if any(PurePosixPath(rel).match(pattern) for pattern in allowlist):
+        if any(_allowlist_matches(rel, pattern) for pattern in allowlist):
             continue
         try:
             lines = path.read_text(

@@ -74,6 +74,10 @@ def _lanes(python=False, frontend=False, site=False, scan=False, deps=False, uv_
 CASES = {
     "docs-only → nothing heavy": (["README.md", "docs/guide.md"], _lanes()),
     "markdown docs-only → nothing heavy": (["README.markdown", "docs/guide.markdown"], _lanes()),
+    "uppercase markdown docs-only → nothing heavy": (
+        ["README.MD", "docs/guide.MARKDOWN", "docs/guide.MDX"],
+        _lanes(),
+    ),
     "python source → python": (["run_agent.py"], _lanes(python=True, scan=True)),
     "dep manifest → python": (["pyproject.toml"], _lanes(python=True, scan=True, deps=True, uv_lock=True)),
     "uv.lock → python": (["uv.lock"], _lanes(python=True, uv_lock=True, shebangs=False)),

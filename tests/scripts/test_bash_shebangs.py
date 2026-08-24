@@ -208,6 +208,36 @@ def test_allowlist_glob_does_not_cross_path_separators():
         allowlist.unlink(missing_ok=True)
 
 
+def test_allowlist_glob_is_root_anchored():
+    allowed_file = REPO_ROOT / "tests/scripts/_temporary-root-anchor.sh"
+    prefixed_file = REPO_ROOT / "_temporary-prefix/tests/scripts/_temporary-root-anchor.sh"
+    allowlist = REPO_ROOT / "tests/scripts/_temporary-shebang-allowlist.txt"
+    allowed_file.write_text("#!" + "/bin/bash\n", encoding="utf-8")
+    prefixed_file.parent.mkdir(parents=True, exist_ok=True)
+    prefixed_file.write_text("#!" + "/bin/bash\n", encoding="utf-8")
+    allowlist.write_text(
+        "tests/scripts/*.sh # direct scripts under the repository root\n",
+        encoding="utf-8",
+    )
+    try:
+        result = run_checker("--allowlist", str(allowlist), str(allowed_file))
+        assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+
+        result = run_checker("--allowlist", str(allowlist), str(prefixed_file))
+        assert result.returncode == 1
+        assert "_temporary-prefix/tests/scripts/_temporary-root-anchor.sh:1" in result.stdout
+    finally:
+        allowed_file.unlink(missing_ok=True)
+        prefixed_file.unlink(missing_ok=True)
+        for parent in (
+            prefixed_file.parent,
+            prefixed_file.parent.parent,
+            prefixed_file.parent.parent.parent,
+        ):
+            parent.rmdir()
+        allowlist.unlink(missing_ok=True)
+
+
 def test_missing_allowlist_file_fails_closed(tmp_path):
     fixture = tmp_path / "clean.sh"
     fixture.write_text("#!" + "/usr/bin/env bash\n", encoding="utf-8")

@@ -147,7 +147,8 @@ _SHEBANG_SUFFIXES = (
 def _is_docs(p: str) -> bool:
     if p.startswith(("skills/", "optional-skills/")):
         return False
-    return p.endswith((".md", ".markdown", ".mdx")) or p.startswith("docs/") or p.startswith("LICENSE")
+    lower_p = p.lower()
+    return lower_p.endswith((".md", ".markdown", ".mdx")) or p.startswith("docs/") or p.startswith("LICENSE")
 
 
 def _is_nix(p: str) -> bool:
@@ -214,7 +215,7 @@ def _is_shebang_scope(p: str) -> bool:
     full scan to executable extensionless files.
     """
     name = os.path.basename(p)
-    return p.endswith(_SHEBANG_SUFFIXES) or "." not in name
+    return p.lower().endswith(_SHEBANG_SUFFIXES) or "." not in name
 
 
 def ci_review_files(files: list[str]) -> list[str]:
