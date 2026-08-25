@@ -28,6 +28,7 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+GIT_LOOKUP_TIMEOUT_SECONDS = 30
 
 TEXT_SUFFIXES = {
     ".bash",
@@ -113,6 +114,7 @@ def git_paths(command: list[str]) -> list[Path]:
             text=True,
             encoding="utf-8",
             errors="replace",
+            timeout=GIT_LOOKUP_TIMEOUT_SECONDS,
         )
     except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired) as exc:
         raise GitLookupError(f"{' '.join(command)} failed: {exc}") from exc

@@ -156,6 +156,18 @@ def test_collection_fails_open_if_pr_changes_after_file_pagination(tmp_path: Pat
     assert "changed during file collection" in result.stdout
 
 
+def test_collection_fails_open_if_file_page_is_incomplete(tmp_path: Path) -> None:
+    result = _run_collection(
+        tmp_path,
+        metadata=f'{"a" * 40}\t{"b" * 40}\t2',
+        files="only-one.py\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.endswith("CHANGED_BEGIN\nCHANGED_END\n")
+    assert "file collection is incomplete" in result.stdout
+
+
 def test_detector_timeout_covers_paginated_file_collection() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     detect_block = workflow.split("  detect:\n", 1)[1].split("\n  # ", 1)[0]

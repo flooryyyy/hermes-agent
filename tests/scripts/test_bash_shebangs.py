@@ -128,6 +128,23 @@ def test_git_scope_lookup_permission_failure_fails_closed(monkeypatch):
         raise AssertionError("permission failure did not become GitLookupError")
 
 
+def test_git_scope_lookup_passes_a_bounded_timeout(monkeypatch):
+    spec = importlib.util.spec_from_file_location("check_bash_shebangs", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    checker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(checker)
+    seen = {}
+
+    def fake_check_output(*_args, **kwargs):
+        seen.update(kwargs)
+        return ""
+
+    monkeypatch.setattr(checker.subprocess, "check_output", fake_check_output)
+
+    assert checker.git_paths(["git", "diff"]) == []
+    assert seen["timeout"] == checker.GIT_LOOKUP_TIMEOUT_SECONDS
+
+
 def test_scan_catches_markdown_and_honors_above_line_suppression(tmp_path):
     old_shebang = "#!" + "/bin/bash\n"
     markdown = tmp_path / "optional-skills" / "example.md"

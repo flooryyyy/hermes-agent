@@ -142,6 +142,12 @@ runs:
                       CHANGED=""
                       break
                     fi
+                    COLLECTED_COUNT="$(printf '%s\n' "$CHANGED" | awk 'NF { count += 1 } END { print count + 0 }')"
+                    if [ "$COLLECTED_COUNT" -ne "$POST_COUNT" ]; then
+                      echo "::warning::pull request file collection is incomplete — failing open (all lanes run)"
+                      CHANGED=""
+                      break
+                    fi
                     break
                   fi
                 fi
