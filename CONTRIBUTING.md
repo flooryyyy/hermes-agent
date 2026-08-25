@@ -680,7 +680,8 @@ that touches the OS, assume *any* platform can hit your code path.
 
 > **Before you PR:** run `scripts/check-windows-footguns.py` to catch the
 > common Windows-unsafe patterns in your diff. It's grep-based and cheap;
-> CI runs it on every PR too.
+> CI runs it on every PR too. The portable-bash checker below is also run for
+> every checker-relevant diff, including Markdown-only changes.
 
 ### Critical rules
 
@@ -830,6 +831,19 @@ that touches the OS, assume *any* platform can hit your code path.
     helpers and never cross them. See `hermes_cli/gateway_windows.py::
     _quote_cmd_script_arg` and `_quote_schtasks_arg` for the reference
     pair.
+
+16. **Portable bash shebangs.** Use `#!/usr/bin/env bash`, never a shebang
+    that hardcodes `/bin/bash`. This applies to shell scripts, generated script strings,
+    Markdown code blocks, and executable extensionless tracked files. An
+    intentional inline exception must be written as `# shebang: ok <reason>`
+    on the line immediately above the match; a bare `ok` is rejected. A
+    whole-file exception must be a repo-relative POSIX glob with a required
+    trailing `# reason` in an allowlist passed with `--allowlist`. `*` stays
+    within one path component; use `**` when matching nested directories.
+    Absolute, parent-traversing, and reasonless entries are rejected. The
+    checker exits 2 (not clean) for missing paths, traversal/read failures, or unverifiable
+    git scope. Pull requests run it on the changed-file diff; pushes to main
+    run the full-repository scan. See `scripts/check-bash-shebangs.py`.
 
 ### Testing cross-platform
 

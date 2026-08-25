@@ -2,6 +2,11 @@ name: Contributor Attribution Check
 
 on:
   workflow_call:
+    inputs:
+      head_sha:
+        description: "The exact pull request head commit to inspect"
+        required: true
+        type: string
     outputs:
       review_status:
         description: "JSON array of review status objects"
@@ -19,16 +24,47 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          ref: ${{ inputs.head_sha }}
           fetch-depth: 0  # Full history needed for git log
 
       - name: Check for unmapped contributor emails
         id: check-emails
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
-          # Get the merge base between this PR and main
-          MERGE_BASE=$(git merge-base origin/main HEAD)
+          set -euo pipefail
 
-          # Find any new author emails in this PR's commits
-          NEW_EMAILS=$(git log ${MERGE_BASE}..HEAD --format='%ae' --no-merges | sort -u)
+          # Compare a PR with its actual base branch. Forks can keep a
+          # customized or stale `main`, so `origin/main` is not a valid
+          # baseline for attribution checks.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE_SHA="$PR_BASE_SHA"
+          else
+            # Push runs check only the commits introduced by that push.
+            BASE_SHA="$PUSH_BEFORE_SHA"
+          fi
+
+          # The first push has an all-zero `before` SHA. Scan HEAD directly
+          # in that case so the root commit is included; do not pick an
+          # arbitrary root when a repository has multiple roots. Baselines
+          # must be literal 40-character commit SHAs, never Git revisions.
+          INITIAL_PUSH=false
+          ZERO_SHA="0000000000000000000000000000000000000000"
+          if [ "$EVENT_NAME" = "push" ] && [ "$BASE_SHA" = "$ZERO_SHA" ]; then
+            INITIAL_PUSH=true
+          elif [[ ! "$BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::Unable to resolve attribution baseline: $BASE_SHA"
+            exit 2
+          fi
+
+          # Find any new author emails after the event's real baseline.
+          if [ "$INITIAL_PUSH" = true ]; then
+            NEW_EMAILS=$(git log HEAD --format='%ae' --no-merges | sort -u)
+          else
+            NEW_EMAILS=$(git log "${BASE_SHA}..HEAD" --format='%ae' --no-merges | sort -u)
+          fi
 
           if [ -z "$NEW_EMAILS" ]; then
             echo "No new commits to check."

@@ -18,6 +18,16 @@ on:
         description: The event name from the calling orchestrator (pull_request or push).
         type: string
         required: true
+      run_python:
+        description: Run Python lint jobs.
+        type: boolean
+        required: false
+        default: true
+      run_shebangs:
+        description: Run the portable bash shebang checker.
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: read
@@ -29,7 +39,7 @@ concurrency:
 jobs:
   lint-diff:
     name: ruff + ty diff
-    if: inputs.event_name == 'pull_request'
+    if: inputs.run_python && inputs.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -126,6 +136,7 @@ jobs:
     # ``lint-diff`` job above runs independently so reviewers still get
     # the diff comment even when enforcement fails.
     name: ruff enforcement (blocking)
+    if: inputs.run_python
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -157,6 +168,7 @@ jobs:
     # shebang scripts via subprocess, bare open() without encoding=, etc.
     # See scripts/check-windows-footguns.py for the full rule list.
     name: Windows footguns (blocking)
+    if: inputs.run_python
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -178,3 +190,23 @@ jobs:
 
       - name: Run footgun checker
         run: python scripts/check-windows-footguns.py --all
+
+  bash-shebangs:
+    name: Portable bash shebangs (blocking)
+    if: inputs.run_shebangs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Run shebang checker
+        run: |
+          if [ "${{ inputs.event_name }}" = "pull_request" ]; then
+            base_sha="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+            python3 scripts/check-bash-shebangs.py --diff "$base_sha"
+          else
+            python3 scripts/check-bash-shebangs.py --all
+          fi

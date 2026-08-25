@@ -38,7 +38,7 @@ jobs:
   detect:
     name: Detect affected areas
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 6
     outputs:
       python: ${{ steps.classify.outputs.python }}
       python_prod: ${{ steps.classify.outputs.python_prod }}
@@ -54,6 +54,7 @@ jobs:
       mcp_catalog: ${{ steps.classify.outputs.mcp_catalog }}
       ci_review: ${{ steps.classify.outputs.ci_review }}
       ci_review_files: ${{ steps.classify.outputs.ci_review_files }}
+      shebangs: ${{ steps.classify.outputs.shebangs }}
       event_name: ${{ github.event_name }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -88,10 +89,12 @@ jobs:
   lint:
     name: Python lints
     needs: detect
-    if: needs.detect.outputs.python == 'true'
+    if: needs.detect.outputs.python == 'true' || needs.detect.outputs.shebangs == 'true'
     uses: ./.github/workflows/lint.yml
     with:
       event_name: ${{ needs.detect.outputs.event_name }}
+      run_python: ${{ needs.detect.outputs.python == 'true' }}
+      run_shebangs: ${{ needs.detect.outputs.shebangs == 'true' }}
 
   js-tests:
     name: JS & TS checks
@@ -143,12 +146,17 @@ jobs:
     needs: detect
     if: needs.detect.outputs.event_name == 'pull_request'
     uses: ./.github/workflows/history-check.yml
+    with:
+      base_sha: ${{ github.event.pull_request.base.sha }}
+      head_sha: ${{ github.event.pull_request.head.sha }}
 
   contributor-check:
     name: Check contributors
     needs: detect
-    if: needs.detect.outputs.python == 'true'
+    if: needs.detect.outputs.event_name == 'pull_request'
     uses: ./.github/workflows/contributor-check.yml
+    with:
+      head_sha: ${{ github.event.pull_request.head.sha }}
 
   uv-lockfile:
     name: Check uv.lock

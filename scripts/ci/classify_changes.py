@@ -29,6 +29,8 @@ Lanes:
   lives under ``apps/``, so without this lane a Rust change matched ``frontend``
   and only the TypeScript matrix ran.
 * ``mcp_catalog`` — bundled MCP catalog / installer review.
+* ``shebangs``    — portable-bash checker for source, docs, and extensionless
+  executable script changes.
 
 Docker is not a lane — it builds on push-to-main and release only,
 never per-PR.
@@ -115,11 +117,38 @@ _INSTALLER_FILES = {"scripts/install.ps1", "scripts/install.cmd"}
 # and the crate's unit tests had never executed in CI at all.
 _RUST_PATHS = ("apps/bootstrap-installer/src-tauri/",)
 _RUST_FILENAMES = {"Cargo.toml", "Cargo.lock"}
+_SHEBANG_SUFFIXES = (
+    ".bash",
+    ".bat",
+    ".cmd",
+    ".css",
+    ".html",
+    ".js",
+    ".jsx",
+    ".json",
+    ".md",
+    ".markdown",
+    ".mdx",
+    ".nix",
+    ".ps1",
+    ".py",
+    ".pyi",
+    ".rs",
+    ".sh",
+    ".sql",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".txt",
+    ".yaml",
+    ".yml",
+)
 
 def _is_docs(p: str) -> bool:
     if p.startswith(("skills/", "optional-skills/")):
         return False
-    return p.endswith((".md", ".mdx")) or p.startswith("docs/") or p.startswith("LICENSE")
+    lower_p = p.lower()
+    return lower_p.endswith((".md", ".markdown", ".mdx")) or p.startswith("docs/") or p.startswith("LICENSE")
 
 
 def _is_nix(p: str) -> bool:
@@ -178,6 +207,17 @@ def _is_ci_review(p: str) -> bool:
     return os.path.basename(p).startswith("eslint.config.")
 
 
+def _is_shebang_scope(p: str) -> bool:
+    """Return whether the checker may scan this changed path.
+
+    The classifier receives paths, not file modes, so extensionless paths are
+    conservatively routed to the cheap checker. The checker itself limits the
+    full scan to executable extensionless files.
+    """
+    name = os.path.basename(p)
+    return p.lower().endswith(_SHEBANG_SUFFIXES) or "." not in name
+
+
 def ci_review_files(files: list[str]) -> list[str]:
     """Return the CI-sensitive paths that need maintainer review."""
     return sorted({f.strip() for f in files if f.strip() and _is_ci_review(f.strip())})
@@ -207,6 +247,7 @@ def classify(files: list[str]) -> dict[str, bool]:
         "installer": any(_is_installer(f) for f in files),
         "rust": any(_is_rust(f) for f in files),
         "mcp_catalog": any(_is_mcp_catalog(f) for f in files),
+        "shebangs": any(_is_shebang_scope(f) for f in files),
         "ci_review": any(_is_ci_review(f) for f in files),
         "nix": python_prod or frontend or any(_is_nix(f) for f in files)
     }
@@ -225,6 +266,7 @@ def classify(files: list[str]) -> dict[str, bool]:
         ret["rust"] = True
         ret["nix"] = True
         ret["ci_review"] = True
+        ret["shebangs"] = True
 
         # explicitly skip mcp catalog here. it's not needed unless those files are modified.
     return ret

@@ -37,11 +37,12 @@ DEFAULT = {
     "installer": True,
     "rust": True,
     "mcp_catalog": False,
+    "shebangs": True,
     "ci_review": True,
 }
 
 
-def _lanes(python=False, frontend=False, site=False, scan=False, deps=False, uv_lock=False, npm_lock=False, installer=False, rust=False, mcp_catalog=False, docker_meta=False, ci_review=False, python_prod=None, nix=None, docker=None) -> dict[str, bool]:
+def _lanes(python=False, frontend=False, site=False, scan=False, deps=False, uv_lock=False, npm_lock=False, installer=False, rust=False, mcp_catalog=False, shebangs=True, docker_meta=False, ci_review=False, python_prod=None, nix=None, docker=None) -> dict[str, bool]:
     # python_prod tracks python except for tests-only diffs; default it to
     # python so the majority of cases don't need to spell it out.
     #
@@ -65,15 +66,21 @@ def _lanes(python=False, frontend=False, site=False, scan=False, deps=False, uv_
         "installer": installer,
         "rust": rust,
         "mcp_catalog": mcp_catalog,
+        "shebangs": shebangs,
         "ci_review": ci_review,
     }
 
 
 CASES = {
     "docs-only → nothing heavy": (["README.md", "docs/guide.md"], _lanes()),
+    "markdown docs-only → nothing heavy": (["README.markdown", "docs/guide.markdown"], _lanes()),
+    "uppercase markdown docs-only → nothing heavy": (
+        ["README.MD", "docs/guide.MARKDOWN", "docs/guide.MDX"],
+        _lanes(),
+    ),
     "python source → python": (["run_agent.py"], _lanes(python=True, scan=True)),
     "dep manifest → python": (["pyproject.toml"], _lanes(python=True, scan=True, deps=True, uv_lock=True)),
-    "uv.lock → python": (["uv.lock"], _lanes(python=True, uv_lock=True)),
+    "uv.lock → python": (["uv.lock"], _lanes(python=True, uv_lock=True, shebangs=False)),
     "ts package → frontend": (["apps/desktop/src/app.tsx"], _lanes(frontend=True)),
     "ui-tui → frontend": (["ui-tui/src/entry.ts"], _lanes(frontend=True)),
     # Lockfile bump shifts every TS package's tree, but not the Python suite.
@@ -114,7 +121,7 @@ CASES = {
     # them, unlike pyproject.toml and uv.lock below.
     "nix module → nix only": (["nix/homeManagerModules.nix"], _lanes(nix=True)),
     "flake.nix → nix only": (["flake.nix"], _lanes(nix=True)),
-    "flake.lock → nix only": (["flake.lock"], _lanes(nix=True)),
+    "flake.lock → nix only": (["flake.lock"], _lanes(nix=True, shebangs=False)),
     # A flake-only file must not mask a Python change beside it.
     "nix + python → both": (["nix/checks.nix", "agent/x.py"], _lanes(python=True, scan=True)),
     # Nine checks run the built binary, so product Python is a nix input even
@@ -144,7 +151,7 @@ CASES = {
     ),
     "cargo lockfile → rust": (
         ["apps/bootstrap-installer/src-tauri/Cargo.lock"],
-        _lanes(frontend=True, rust=True),
+        _lanes(frontend=True, rust=True, shebangs=False),
     ),
     # Non-.rs files in the crate still change what cargo builds.
     "tauri config → rust": (
@@ -176,7 +183,7 @@ CASES = {
         _lanes(python=True, scan=True),
     ),
     # Supply-chain lanes
-    ".pth file → scan": (["evil.pth"], _lanes(python=True, scan=True)),
+    ".pth file → scan": (["evil.pth"], _lanes(python=True, scan=True, shebangs=False)),
     "setup.py → scan": (["setup.py"], _lanes(python=True, scan=True)),
     "mcp catalog manifest → mcp_catalog": (
         ["optional-mcps/foo/manifest.yaml"],
@@ -189,15 +196,15 @@ CASES = {
     # CI-sensitive files require explicit review label.
     "eslint config → ci_review": (
         ["apps/desktop/eslint.config.mjs"],
-        _lanes(frontend=True, ci_review=True),
+        _lanes(frontend=True, ci_review=True, shebangs=False),
     ),
     "shared eslint config → ci_review": (
         ["eslint.config.shared.mjs"],
-        _lanes(python=True, ci_review=True),
+        _lanes(python=True, ci_review=True, shebangs=False),
     ),
     "ui-tui eslint config → ci_review": (
         ["ui-tui/eslint.config.mjs"],
-        _lanes(frontend=True, ci_review=True),
+        _lanes(frontend=True, ci_review=True, shebangs=False),
     ),
     "web eslint config → ci_review": (
         ["web/eslint.config.js"],
@@ -205,15 +212,15 @@ CASES = {
     ),
     "shared package eslint config → ci_review": (
         ["apps/shared/eslint.config.mjs"],
-        _lanes(frontend=True, ci_review=True),
+        _lanes(frontend=True, ci_review=True, shebangs=False),
     ),
     "bootstrap-installer eslint config → ci_review": (
         ["apps/bootstrap-installer/eslint.config.mjs"],
-        _lanes(frontend=True, ci_review=True),
+        _lanes(frontend=True, ci_review=True, shebangs=False),
     ),
     "prettier config → ci_review": (
         [".prettierrc"],
-        _lanes(python=True, ci_review=True),
+        _lanes(python=True, ci_review=True, shebangs=False),
     ),
     "workflow yml → ci_review (also fail-open all)": (
         [".github/workflows/typecheck.yml"],
@@ -300,3 +307,12 @@ def test_ci_review_files_returns_only_sensitive_paths_sorted_and_unique():
         ".github/workflows/ci.yml",
         "apps/desktop/eslint.config.mjs",
     ]
+
+
+def test_checker_lane_runs_for_markdown_and_extensionless_script_changes():
+    markdown = classify(["README.md"])
+    assert markdown["shebangs"] is True
+    assert markdown["python"] is False
+
+    extensionless = classify(["scripts/launch-helper"])
+    assert extensionless["shebangs"] is True
