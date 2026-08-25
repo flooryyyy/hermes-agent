@@ -15,6 +15,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ACTION = REPO_ROOT / ".github" / "actions" / "detect-changes" / "action.yml"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yaml"
+CONTRIBUTOR_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "contributor-check.yml"
 HISTORY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "history-check.yml"
 
 
@@ -178,9 +179,12 @@ def test_detector_timeout_covers_paginated_file_collection() -> None:
 def test_contributor_attribution_runs_for_every_pull_request() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     contributor_block = workflow.split("  contributor-check:\n", 1)[1].split("\n  uv-lockfile:", 1)[0]
+    contributor_workflow = CONTRIBUTOR_WORKFLOW.read_text(encoding="utf-8")
 
     assert "if: needs.detect.outputs.event_name == 'pull_request'" in contributor_block
     assert "if: needs.detect.outputs.python == 'true'" not in contributor_block
+    assert "head_sha: ${{ github.event.pull_request.head.sha }}" in contributor_block
+    assert "ref: ${{ inputs.head_sha }}" in contributor_workflow
 
 
 def test_history_check_uses_the_pull_request_base_sha() -> None:

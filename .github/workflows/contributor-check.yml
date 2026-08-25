@@ -2,6 +2,11 @@ name: Contributor Attribution Check
 
 on:
   workflow_call:
+    inputs:
+      head_sha:
+        description: "The exact pull request head commit to inspect"
+        required: true
+        type: string
     outputs:
       review_status:
         description: "JSON array of review status objects"
@@ -19,6 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          ref: ${{ inputs.head_sha }}
           fetch-depth: 0  # Full history needed for git log
 
       - name: Check for unmapped contributor emails
