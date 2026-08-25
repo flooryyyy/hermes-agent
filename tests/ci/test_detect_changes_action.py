@@ -25,6 +25,13 @@ def _collection_script() -> str:
     return textwrap.dedent(action[start:end])
 
 
+def _history_check_script() -> str:
+    workflow = HISTORY_WORKFLOW.read_text(encoding="utf-8")
+    start = workflow.index("        run: |\n") + len("        run: |\n")
+    end = workflow.index("\n\n      - name: Upload review status artifact", start)
+    return textwrap.dedent(workflow[start:end])
+
+
 def _run_collection(
     tmp_path: Path,
     *,
@@ -153,7 +160,7 @@ def test_detector_timeout_covers_paginated_file_collection() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     detect_block = workflow.split("  detect:\n", 1)[1].split("\n  # ", 1)[0]
 
-    assert "timeout-minutes: 5" in detect_block
+    assert "timeout-minutes: 6" in detect_block
 
 
 def test_contributor_attribution_runs_for_every_pull_request() -> None:
@@ -166,8 +173,56 @@ def test_contributor_attribution_runs_for_every_pull_request() -> None:
 
 def test_history_check_uses_the_pull_request_base_sha() -> None:
     workflow = HISTORY_WORKFLOW.read_text(encoding="utf-8")
+    ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8")
 
     assert "base_sha:" in workflow
+    assert "head_sha:" in workflow
+    assert "ref: ${{ inputs.head_sha }}" in workflow
     assert 'PR_BASE_SHA: ${{ inputs.base_sha }}' in workflow
     assert 'git merge-base "$PR_BASE_SHA" HEAD' in workflow
+    assert 'head_sha: ${{ github.event.pull_request.head.sha }}' in ci_workflow
     assert "origin/main" not in workflow
+
+
+def test_history_check_rejects_unrelated_pull_request_head(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args: str) -> str:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        return result.stdout.strip()
+
+    git("init", "-q")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "Test User")
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    git("add", "base.txt")
+    git("commit", "-qm", "base")
+    base_sha = git("rev-parse", "HEAD")
+
+    git("checkout", "--orphan", "unrelated")
+    git("rm", "-q", "-rf", ".")
+    (repo / "head.txt").write_text("unrelated\n", encoding="utf-8")
+    git("add", "head.txt")
+    git("commit", "-qm", "unrelated head")
+
+    github_output = tmp_path / "github-output"
+    env = os.environ.copy()
+    env.update({"GITHUB_OUTPUT": str(github_output), "PR_BASE_SHA": base_sha})
+    result = subprocess.run(
+        ["bash", "-c", _history_check_script()],
+        cwd=repo,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "no common ancestor" in result.stdout
+    assert '"unrelated histories"' in github_output.read_text(encoding="utf-8")

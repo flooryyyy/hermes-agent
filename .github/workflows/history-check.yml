@@ -20,6 +20,10 @@ on:
         description: "The pull request's actual base commit SHA."
         required: true
         type: string
+      head_sha:
+        description: "The pull request's actual head commit SHA."
+        required: true
+        type: string
     outputs:
       review_status:
         description: "JSON array of review_status objects for the synthesizer."
@@ -38,6 +42,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0 # full history both sides for merge-base
+          ref: ${{ inputs.head_sha }}
 
       - id: merge-base-check
         name: Reject PRs with no common ancestor with the PR base
@@ -55,7 +60,7 @@ jobs:
             echo ""
             echo "::error::This PR has no common ancestor with its base branch."
             echo ""
-            echo "Your branch's history is disconnected from main.  Common causes:"
+            echo "Your branch's history is disconnected from its PR base.  Common causes:"
             echo "  - the branch was created with 'git checkout --orphan'"
             echo "  - '.git/' was re-initialized at some point during the work"
             echo "  - the branch was force-pushed from an unrelated repository"
@@ -72,7 +77,7 @@ jobs:
             echo "  git push -f origin fix-branch"
             exit 1
           fi
-          echo "::notice::Common ancestor with main: $BASE"
+          echo "::notice::Common ancestor with PR base: $BASE"
           echo "review_status=[]" >> "$GITHUB_OUTPUT"
           echo "review_status=[]" > review-status.json
 
