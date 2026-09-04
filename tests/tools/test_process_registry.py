@@ -43,6 +43,7 @@ def _reset_systemd_scope_cache():
     _pr._SYSTEMD_SCOPE_AVAILABLE = original
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="systemd scope is Linux-only")
 def test_systemd_scope_binary_lookup_uses_shared_nixos_path(monkeypatch, tmp_path):
     """NixOS systemd binaries must be found from a reduced gateway PATH."""
     import hermes_cli._subprocess_compat as subprocess_compat
